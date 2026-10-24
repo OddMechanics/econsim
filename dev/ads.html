@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ads bench</title>
+  <!-- ?cam=orbit|screens|plaza|columns|boards|vans|far|street  ?night=0..1  ?t=<freeze seconds>  ?stress=1 (600 ads, 400 vehicles) -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1424; font: 13px/1.35 system-ui, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; outline: none; }
+    #ui { position: fixed; top: 10px; left: 10px; background: rgba(20, 24, 32, 0.82); color: #e8e6e0; padding: 10px 12px; border-radius: 8px; width: 270px; }
+    #ui.hidden { display: none; }
+    #ui h1 { font-size: 14px; margin: 0 0 8px; }
+    #ui button { background: #3a4252; color: #fff; border: 0; border-radius: 5px; padding: 5px 8px; margin: 2px 2px 2px 0; cursor: pointer; }
+    #ui button.on { background: #c98a2e; }
+    #ui label { display: block; margin: 6px 0 2px; }
+    #ui input[type=range] { width: 100%; }
+    #stats { margin-top: 8px; font: 11px/1.4 ui-monospace, monospace; color: #b9c0cc; white-space: pre; }
+    #pick { margin-top: 6px; color: #ffd27a; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <h1>Ads bench</h1>
+    <button id="night">Night</button><button id="glow" class="on">Glow</button><button id="move" class="on">Traffic</button>
+    <div>
+      <button data-cam="orbit">Orbit</button><button data-cam="screens">Screens</button><button data-cam="plaza">Plaza</button>
+      <button data-cam="columns">Columns</button><button data-cam="boards">Boards</button><button data-cam="vans">Vans</button>
+      <button data-cam="street">Street</button><button data-cam="far">Far</button>
+    </div>
+    <label>Night level <span id="nv">0</span></label>
+    <input id="nr" type="range" min="0" max="1" step="0.05" value="0" />
+    <div id="pick"></div>
+    <div id="stats"></div>
+  </div>
+  <script type="module" src="./ads.ts"></script>
+</body>
+</html>

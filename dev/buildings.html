@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Building bench</title>
+  <!-- ?stress=N adds N random buildings; a real city can be injected as window.__benchCity (see the perf scripts) -->
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1424; font: 13px/1.35 system-ui, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; outline: none; }
+    #ui { position: fixed; top: 10px; left: 10px; background: rgba(20, 24, 32, 0.82); color: #e8e6e0; padding: 10px 12px; border-radius: 8px; width: 290px; }
+    #ui h1 { font-size: 14px; margin: 0 0 8px; }
+    #ui button { background: #3a4252; color: #fff; border: 0; border-radius: 5px; padding: 5px 8px; margin: 2px 2px 2px 0; cursor: pointer; }
+    #ui button.on { background: #c98a2e; }
+    #ui label { display: block; margin: 6px 0 2px; }
+    #ui select, #ui input[type=range] { width: 100%; }
+    #stats { margin-top: 8px; font: 11px/1.4 ui-monospace, monospace; color: #b9c0cc; white-space: pre; overflow: hidden; }
+    #pick { margin-top: 6px; color: #ffd27a; min-height: 1.2em; }
+    body.clean #ui { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <h1>Building bench</h1>
+    <button id="night">Night</button><button id="cut">Cutaway: off</button><button id="own">Ownership</button><button id="grow">Grow sites</button>
+    <button id="lod">LOD: auto</button><button id="close">Close-up</button><button id="far">Skyline</button><button id="downtown">Downtown</button><button id="adsrow">Ads row</button>
+    <label>Hour <span id="hv">12:00</span></label>
+    <input id="hr" type="range" min="0" max="24" step="0.25" value="12" />
+    <label>Night level <span id="nv">0</span> (override)</label>
+    <input id="nr" type="range" min="0" max="1" step="0.05" value="0" />
+    <label>Focus</label>
+    <select id="focus"></select>
+    <div id="pick"></div>
+    <div id="stats"></div>
+  </div>
+  <script type="module" src="./buildings.ts"></script>
+</body>
+</html>

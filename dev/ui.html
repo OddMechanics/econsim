@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UI bench</title>
+  <!-- The HTML panels (dashboards, inspector, Net, TV) without the 3D view.
+       ?days=N runs a fresh world for N days first (slow: ~0.3 s a day); or call window.__load(json) with a save. -->
+  <style>
+    body { background: radial-gradient(ellipse at 50% 30%, #3b4a5c 0%, #1d2530 60%, #12161c 100%) !important; }
+    #bench { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 1; color: #9aa4b2; font: 11px system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="bench">UI bench · no 3D view</div>
+  <script type="module" src="./ui.ts"></script>
+</body>
+</html>

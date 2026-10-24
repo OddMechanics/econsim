@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ad art gallery</title>
+  <!-- every ad design of the ads bench painted flat: ?fmt=board|screen|poster|column|banner|strip|flyer|vacant|livery|plate|all -->
+  <style>
+    body { margin: 0; background: #2a2d33; color: #ddd; font: 11px system-ui, sans-serif; }
+    #g { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; align-items: flex-start; }
+    figure { margin: 0; } figcaption { opacity: 0.6; margin-top: 2px; }
+    canvas { display: block; background: #000; }
+  </style>
+</head>
+<body>
+  <div id="g"></div>
+  <script type="module" src="./adart.ts"></script>
+</body>
+</html>

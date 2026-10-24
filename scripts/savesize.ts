@@ -1,0 +1,13 @@
+import { MINUTES_PER_DAY } from '../src/sim/config';
+import { createState, Simulation } from '../src/sim/sim';
+import { serialize, deserialize } from '../src/sim/save';
+const sim = new Simulation(createState(12345));
+for (let i = 0; i < Number(process.argv[2] ?? 100) * MINUTES_PER_DAY; i++) sim.step();
+let t = performance.now();
+const json = serialize(sim.state);
+const ser = performance.now() - t;
+t = performance.now();
+deserialize(json);
+console.log(`pop ${sim.state.people.length}: save ${(json.length / 1e6).toFixed(1)} MB, serialize ${ser.toFixed(0)} ms, parse ${(performance.now() - t).toFixed(0)} ms`);
+const parts = Object.entries(sim.state).map(([k, v]) => [k, JSON.stringify(v).length]).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 8);
+console.log(parts.map(([k, n]) => `${k} ${((n as number) / 1e6).toFixed(2)}MB`).join(', '));

@@ -1,0 +1,56 @@
+People models and animations (people.glb, people-anim.bin)
+==========================================================
+
+Everyone is the same faceless, gender-neutral mannequin. The files are derived
+(re-skinned, slimmed, recolored, retargeted) from two free asset packs by
+Quaternius (https://quaternius.com), both released under CC0 1.0 Universal
+(public domain dedication):
+
+1. Universal Animation Library (Standard / free version)
+   https://quaternius.com/packs/universalanimationlibrary.html
+   https://quaternius.itch.io/universal-animation-library
+   Official page lists "License: CC0" ("Free to use in personal, educational
+   and commercial projects. (CC0 License)"). Used: the Mannequin mesh and
+   skeleton, and the clips Idle_Loop, Idle_Talking_Loop, Sitting_Idle_Loop,
+   Sitting_Talking_Loop, Driving_Loop, Fixing_Kneeling, Walk_Loop,
+   Walk_Formal_Loop, Jog_Fwd_Loop, Dance_Loop.
+
+2. Ultimate Modular Men Pack (February 2022)
+   https://quaternius.com/packs/ultimatemodularcharacters.html
+   Official page lists "License: CC0". Used: only the Idle, Idle_Neutral and
+   Walk clips of the Casual_2 character (no meshes).
+
+Licenses were checked on the official pages on 2026-10-23 and 2026-10-24.
+(Quaternius has since introduced a "Quaternius Asset License" for newer
+releases; it states it does not apply retroactively, and the packs above are
+still labeled CC0 on their pages. CC0 dedications cannot be revoked.)
+
+Files were obtained from verbatim mirrors of the official downloads:
+- https://github.com/J-Ponzo/gltf-universal-animation-library
+  (glTF/AnimationLibrary_Godot_Standard.gltf + .bin: the free UAL glTF as
+  distributed on itch.io; the repo states CC0 1.0)
+- https://github.com/LuanDucate/Ducz.CharacterCreator
+  (public/models/Male/Casual_2.glb: the official Individual Characters glTF
+  file repacked to GLB, byte-identical data)
+
+CC0 1.0 Universal summary (full legal code:
+https://creativecommons.org/publicdomain/zero/1.0/legalcode):
+
+  The person who associated a work with this deed has dedicated the work to
+  the public domain by waiving all of his or her rights to the work worldwide
+  under copyright law, including all related and neighboring rights, to the
+  extent allowed by law. You can copy, modify, distribute and perform the
+  work, even for commercial purposes, all without asking permission.
+
+No attribution is required, but thanks to Quaternius for making these free
+(https://www.patreon.com/quaternius).
+
+How the files were made: scripts/people-assets/build_people.py (run it with
+the two downloads above). It maps the mannequin onto our 60-joint skeleton
+(identity rest rotations), slims its sculpted shoulders, chest and arms toward
+the bones for a neutral build, swaps the 28 knuckle spheres for low-poly ones,
+splits it into head / body / legs / feet with clothes painted as palette zones
+per triangle (welded, normals rebuilt flat at load), and retargets the clips
+(world-rotation deltas, 30 fps, int16 quaternions). people-anim.bin is a small
+custom format: "PANM", u32 version, u32 JSON length, JSON header (joints,
+clips), then int16 frames (body position * 8192, 21 quaternions * 32767).

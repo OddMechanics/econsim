@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roads bench</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 12px/1.4 system-ui, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; outline: none; }
+    #ui { position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    #ui button { background: #1d2430cc; color: #e8edf5; border: 1px solid #ffffff30; border-radius: 4px; padding: 4px 9px; cursor: pointer; }
+    #ui button.on { background: #3d6db5cc; }
+    #stats { position: absolute; bottom: 8px; left: 8px; color: #e8edf5; background: #0009; padding: 4px 8px; border-radius: 4px; white-space: pre; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <button id="night">Night</button>
+    <button id="overlay">Ownership</button>
+    <button id="grow">Grow +10</button>
+    <button data-view="overview">Overview</button>
+    <button data-view="city">City</button>
+    <button data-view="street">Street</button>
+    <button data-view="dirt">Dirt</button>
+    <button data-view="works">Works</button>
+    <button data-view="furniture">Furniture</button>
+    <button data-view="signal">Signal</button>
+    <button id="crews">Crews</button>
+  </div>
+  <div id="stats"></div>
+  <script type="module" src="./roads.ts"></script>
+</body>
+</html>

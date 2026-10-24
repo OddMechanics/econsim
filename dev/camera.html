@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Camera bench</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 12px/1.4 system-ui, sans-serif; }
+    canvas { width: 100%; height: 100%; display: block; outline: none; }
+    #ui { position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; z-index: 5; }
+    #ui button { background: #1d2430cc; color: #e8edf5; border: 1px solid #ffffff30; border-radius: 4px; padding: 4px 9px; cursor: pointer; }
+    #ui button.on { background: #3d6db5cc; }
+    #ui input { width: 70px; background: #1d2430cc; color: #e8edf5; border: 1px solid #ffffff30; border-radius: 4px; padding: 3px 6px; }
+    #stats { position: absolute; top: 40px; left: 8px; color: #e8edf5; background: #0009; padding: 4px 8px; border-radius: 4px; white-space: pre; z-index: 5; pointer-events: none; }
+    #help { position: absolute; right: 8px; top: 8px; color: #e8edf5; background: #0009; padding: 4px 8px; border-radius: 4px; white-space: pre; z-index: 5; pointer-events: none; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <button data-mode="free">Free</button>
+    <button data-mode="follow">Follow</button>
+    <button data-mode="cinema">Cinema</button>
+    <button data-mode="walk">Walk</button>
+    <button id="letterbox">Letterbox</button>
+    <button id="captions">Captions</button>
+    <button id="pause">Pause</button>
+    <button id="fast">Speed x1</button>
+    <input id="typing" placeholder="type here" />
+  </div>
+  <div id="stats"></div>
+  <div id="help">Arrows/WASD pan · Shift faster · Q/E rotate · R/F zoom
+C cinema · V walk · mouse orbit / right-drag pan / wheel</div>
+  <script type="module" src="./camera.ts"></script>
+</body>
+</html>
