@@ -274,3 +274,5 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   day, a 120 MB save (0.9 s to write), ~600 MB of memory; estimate ~10–15k in the browser.
 - Faster growth (user: "make the population grow quicker"): arrivals count open positions (not hiring employers), base 4/day,
   cap 40 + pop/20; a housing brake (homeless share). Day 120: 2,490 / 3,031 people, 0 deaths (before 2,225 / 1,643).
+- The project is on GitHub: `git@github.com:OddMechanics/econsim.git` (branch `main`, first commit b30c762). Standing rule
+  from the user: commit and push after every round of edits.
