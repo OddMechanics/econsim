@@ -11,7 +11,7 @@
 // (with a construction loan), and the construction companies allow.
 
 import { MINUTES_PER_DAY } from './config';
-import { log, nameOf, pay, type Ctx } from './ctx';
+import { cityPop, log, nameOf, pay, type Ctx } from './ctx';
 import { BUILDINGS, materialsFor, unitsFor, workHoursFor } from './goods';
 import { refPrice } from './market';
 import { assessLot, noteLandDemand, referenceWage } from './government';
@@ -305,7 +305,7 @@ export function planDevelopment(ctx: Ctx, investor: number, money: number, credi
   if (office >= 3) consider('officetower', office + 2, 1, referenceWage(ctx) * 0.9);
   // dear land downtown: towers for people who can pay for a flat there (even while cheaper flats stand empty elsewhere)
   const towers = towerDemand(ctx);
-  if (ctx.s.people.length > 250 && towers >= 20) consider('tower', towers, BUILDINGS.tower.unitsPerFloor, rent * 1.3);
+  if (cityPop(ctx) > 250 && towers >= 20) consider('tower', towers, BUILDINGS.tower.unitsPerFloor, rent * 1.3);
   // a block of flats further out when people need homes
   if (homes >= 12 || homes + growth * 20 >= 30) consider('apartments', Math.min(homes + growth * 10, 60), BUILDINGS.apartments.unitsPerFloor, rent);
   if (!plans.length) return null;

@@ -1,5 +1,6 @@
 import { MINUTES_PER_DAY, NIGHT, STATS } from './config';
 import { Rng } from './rng';
+import { inGrid } from './world';
 import type { Building, Contract, Firm, LogEntry, Lot, Party, Person, Polity, RoadEdge, RoadNode, SimState, Vehicle } from './types';
 
 /** The outside world's land office: owns all land no government here has claimed. Money paid to it leaves the economy. */
@@ -168,4 +169,23 @@ export function isPublic(ctx: Ctx, id: number): boolean {
   if (id === TERRITORY.id || ctx.gById.has(id) || ctx.govOfFirm.has(id)) return true;
   const f = ctx.fById.get(id);
   return !!f && f.gov !== undefined;
+}
+
+/**
+ * How many people live in the city itself (not out in the countryside):
+ * what the city's size means for zoning, building heights, chains, exports.
+ * Counted once per game minute.
+ */
+const popCache = new WeakMap<object, { t: number; n: number; v: number }>();
+export function cityPop(ctx: Ctx): number {
+  const s = ctx.s;
+  const c = popCache.get(s);
+  if (c && c.t === s.tick && c.n === s.people.length) return c.v;
+  let v = 0;
+  for (const p of s.people) {
+    const h = ctx.bById.get(p.home);
+    if (!h || inGrid(s.world, h.x, h.y)) v++;
+  }
+  popCache.set(s, { t: s.tick, n: s.people.length, v });
+  return v;
 }

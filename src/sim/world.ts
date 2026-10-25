@@ -1,4 +1,4 @@
-import { REGROW_PER_DAY, WORLD } from './config';
+import { MAP, REGROW_PER_DAY, WORLD } from './config';
 import { hash2, Rng } from './rng';
 import type { ResourceKind, TileKind, World } from './types';
 
@@ -21,6 +21,80 @@ export function tileXY(w: World, i: number): [number, number] {
 
 export function mapSize(w: World): number {
   return w.size * w.tile;
+}
+
+// ------------------------------------------------------------ the countryside
+//
+// Only the city's 2 x 2 km in the middle of the map is stored as tiles. The
+// countryside around it (MAP) is described by formulas of position and the
+// world's seed: its height, where the woods are, how good the soil is. The
+// same formulas draw the ground, so what stands on it sits on it.
+
+/** On the city's stored grid? */
+export function inGrid(w: World, x: number, y: number): boolean {
+  const S = w.size * w.tile;
+  return x >= 0 && y >= 0 && x < S && y < S;
+}
+
+/** On the map at all (the countryside included), at least `margin` from its edge? */
+export function onLand(x: number, y: number, margin = 0): boolean {
+  return x >= MAP.min + margin && y >= MAP.min + margin && x <= MAP.max - margin && y <= MAP.max - margin;
+}
+
+/** How far outside the city's grid a point is (0 on it). */
+export function beyondGrid(w: World, x: number, y: number): number {
+  const S = w.size * w.tile;
+  const dx = x < 0 ? -x : x > S ? x - S : 0, dy = y < 0 ? -y : y > S ? y - S : 0;
+  return Math.hypot(dx, dy);
+}
+
+function smoothstep(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Ground height in the countryside: gently rolling farmland, hills toward the horizon. */
+function countryHeight(w: World, x: number, y: number): number {
+  const S = w.size * w.tile, seed = w.seed ?? 0;
+  const d = beyondGrid(w, x, y);
+  // the grid's own edge, smoothed along the border (the land carries on its general level, not every bump)
+  const bx = Math.min(S, Math.max(0, x)), by = Math.min(S, Math.max(0, y));
+  const alongY = Math.abs(bx - x) >= Math.abs(by - y);
+  let edge = 0;
+  for (let k = -3; k <= 3; k++) edge += gridHeight(w, alongY ? bx : bx + k * 25, alongY ? by + k * 25 : by);
+  edge /= 7;
+  const h0 = gridHeight(w, bx, by) + (edge - gridHeight(w, bx, by)) * smoothstep(0, 40, d);
+  const ground = 1.2 + 3.5 * fbm(x / 200, y / 200, seed + 61, 3);
+  const farm = 40 * Math.max(0, fbm(x / 900, y / 900, seed + 62, 3) - 0.42) * smoothstep(250, 1500, d);
+  // past the edge of the map: real hills on the horizon
+  const out = Math.max(0, Math.max(MAP.min - x, x - MAP.max, MAP.min - y, y - MAP.max));
+  const hills = 120 * Math.max(0, fbm(x / 1100, y / 1100, seed + 63, 3) - 0.3) * smoothstep(-200, 1200, out);
+  return h0 + (ground + farm + hills - h0) * smoothstep(0, 160, d);
+}
+
+/**
+ * The countryside's ground: the same woods and rocky outcrops as the edge of
+ * the city's square (the same noise), thinning out over the first few hundred
+ * metres into farmland with small woodlots.
+ */
+function countryKind(w: World, x: number, y: number): TileKind {
+  const seed = w.seed ?? 0;
+  const d = beyondGrid(w, x, y);
+  if (fbm(x / 160, y / 160, seed + 7, 3) > 0.71 + 0.12 * smoothstep(0, 350, d)) return 'rock';
+  return fbm(x / 130, y / 130, seed + 13, 4) > 0.55 + 0.07 * smoothstep(0, 350, d) ? 'forest' : 'grass';
+}
+
+/** What the ground is anywhere on the map. */
+export function kindAt(w: World, x: number, y: number): TileKind {
+  if (inGrid(w, x, y)) return w.kind[tileOf(w, x, y)];
+  return countryKind(w, x, y);
+}
+
+/** How good the soil is (0..1) anywhere on the map. */
+export function fertilityAt(w: World, x: number, y: number): number {
+  if (inGrid(w, x, y)) return w.fertility[tileOf(w, x, y)];
+  const soil = fbm(x / 200, y / 200, (w.seed ?? 0) + 29, 3);
+  return Math.min(1, Math.max(0.3, soil * 1.25));
 }
 
 // ---------------------------------------------------------------- generation
@@ -56,7 +130,7 @@ export function generateWorld(seed: number): World {
     size: n, tile: WORLD.tile,
     height: arr(), kind: new Array<TileKind>(N).fill('grass'), fertility: arr(),
     wood: arr(), stone: arr(), clay: arr(), ore: arr(), forage: arr(), fish: arr(),
-    forageCap: arr(), fishCap: arr(), oreCap: arr(), clayCap: arr(), used: arr(), ver: 0,
+    forageCap: arr(), fishCap: arr(), oreCap: arr(), clayCap: arr(), used: arr(), ver: 0, seed,
   };
   const c = n / 2;
   for (let y = 0; y < n; y++) {
@@ -238,7 +312,7 @@ export function workSpot(w: World, i: number): [number, number] {
 
 export function walkable(w: World, x: number, y: number): boolean {
   const tx = Math.floor(x / w.tile), ty = Math.floor(y / w.tile);
-  if (tx < 0 || ty < 0 || tx >= w.size || ty >= w.size) return false;
+  if (tx < 0 || ty < 0 || tx >= w.size || ty >= w.size) return onLand(x, y);
   return w.kind[ty * w.size + tx] !== 'water';
 }
 
@@ -350,8 +424,15 @@ function wildPathSearch(w: World, sx: number, sy: number, tx: number, ty: number
   return pts;
 }
 
-/** Terrain height at a world point (bilinear over tile corner heights). */
+/** Terrain height at a point anywhere on the map (the countryside's is computed). */
 export function heightAt(w: World, x: number, y: number): number {
+  const S = w.size * w.tile;
+  if (x < -w.tile / 2 || y < -w.tile / 2 || x > S + w.tile / 2 || y > S + w.tile / 2) return countryHeight(w, x, y);
+  return gridHeight(w, x, y);
+}
+
+/** On the grid: bilinear over tile corner heights. */
+function gridHeight(w: World, x: number, y: number): number {
   const n = w.size;
   const fx = Math.min(n - 1.001, Math.max(0, x / w.tile - 0.5)), fy = Math.min(n - 1.001, Math.max(0, y / w.tile - 0.5));
   const x0 = Math.floor(fx), y0 = Math.floor(fy);

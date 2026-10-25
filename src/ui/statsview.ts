@@ -179,8 +179,10 @@ export class StatsView {
     return [
       { el: tiles, update: () => this.fillTiles(tiles) },
       { el: insights, update: () => this.fillInsights(list) },
-      this.chart('People and jobs', 'Everyone living in the city, how many have a job, and how many have neither a job nor a business.', (d) => [
+      this.chart('People and jobs', 'Everyone living in the city and the countryside around it, how many have a job, and how many have neither a job nor a business.', (d) => [
         this.s('Population', slot(0), d, (x) => x.pop), this.s('Employed', slot(1), d, (x) => x.employed), this.s('Out of work', slot(2), d, (x) => x.jobless)]),
+      this.chart('City and countryside', 'Where people live: in the city, or out in the farm country and its villages (whose people live a simpler life).', (d) => [
+        this.s('City', slot(0), d, (x) => x.pop - (x.rural ?? 0)), this.s('Countryside', slot(3), d, (x) => x.rural ?? 0)], { kind: 'stacked' }),
       this.chart('Where people\'s money goes each day', 'Spending in shops, at restaurants and on rent. Stacked: the top edge is the total.', (d) => this.spendSeries(d), { kind: 'stacked' }),
       this.chart('Wages against prices', 'Both start at 100. If the wage line is above the prices line, people can afford more than at the start.', (d) => {
         const w0 = d.find((x) => x.wage.median > 0)?.wage.median ?? 1, p0 = d.find((x) => x.cpi > 0)?.cpi ?? 1;

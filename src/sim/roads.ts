@@ -13,11 +13,11 @@
 // separate public-works project (see government.ts).
 
 import { LOT_SIZE, ROAD, ZONES } from './config';
-import { newId, TERRITORY, type Ctx } from './ctx';
+import { cityPop, newId, TERRITORY, type Ctx } from './ctx';
 import type { Lot, PlannedRoad, RoadEdge, RoadKind, RoadNode, Zone } from './types';
 import { hash2 } from './rng';
 import { streetName } from './names';
-import { lineClear, mapSize, tileOf, useTile, walkable, wildPath } from './world';
+import { inGrid, kindAt, lineClear, mapSize, onLand, tileOf, useTile, walkable, wildPath } from './world';
 
 export function sidewalkOf(kind: RoadKind): number {
   return kind === 'country' ? 0.6 : ROAD.sidewalk;
@@ -162,7 +162,7 @@ export function cityFrame(ctx: Ctx): CityFrame {
 
 /** How far downtown, the inner city and the suburbs reach: they grow with the city. */
 export function zoneRadii(ctx: Ctx): { core: number; urban: number; suburb: number } {
-  const pop = ctx.s.people.length;
+  const pop = cityPop(ctx);
   return { core: ZONES.core + Math.min(250, pop / 10), urban: ZONES.urban + Math.min(400, pop / 6), suburb: ZONES.suburb + Math.min(450, pop / 5) };
 }
 
@@ -195,14 +195,14 @@ export function rezone(ctx: Ctx): void {
 
 // ---------------------------------------------------------------- building
 
-function addNode(ctx: Ctx, x: number, y: number): RoadNode {
+export function addNode(ctx: Ctx, x: number, y: number): RoadNode {
   const n: RoadNode = { id: newId(ctx), x, y, edges: [] };
   ctx.s.roads.nodes.push(n);
   ctx.nodeById.set(n.id, n);
   return n;
 }
 
-function addEdge(ctx: Ctx, a: RoadNode, b: RoadNode, kind: RoadKind, built = false, name?: string): RoadEdge {
+export function addEdge(ctx: Ctx, a: RoadNode, b: RoadNode, kind: RoadKind, built = false, name?: string): RoadEdge {
   const width = kind === 'avenue' ? ROAD.avenue : kind === 'street' ? ROAD.street : ROAD.country;
   const e: RoadEdge = { id: newId(ctx), a: a.id, b: b.id, kind, width, len: Math.hypot(b.x - a.x, b.y - a.y) };
   if (!built) { e.built = false; e.progress = 0; }
@@ -219,22 +219,21 @@ function addEdge(ctx: Ctx, a: RoadNode, b: RoadNode, kind: RoadKind, built = fal
   const span = halfSpan(e) + 1;
   for (let i = 0; i <= steps; i++) {
     const x = a.x + ((b.x - a.x) * i) / steps, y = a.y + ((b.y - a.y) * i) / steps;
-    for (let o = -span; o <= span; o += w.tile / 2) useTile(w, tileOf(w, x + nx * o, y + ny * o));
+    for (let o = -span; o <= span; o += w.tile / 2) if (inGrid(w, x + nx * o, y + ny * o)) useTile(w, tileOf(w, x + nx * o, y + ny * o));
   }
   return e;
 }
 
 /** Is a straight road from (ax,ay) to (bx,by) possible? */
-function roadFits(ctx: Ctx, ax: number, ay: number, bx: number, by: number, kind: RoadKind, ignoreNodes: number[]): boolean {
+export function roadFits(ctx: Ctx, ax: number, ay: number, bx: number, by: number, kind: RoadKind, ignoreNodes: number[]): boolean {
   const w = ctx.s.world;
-  const size = mapSize(w);
-  const margin = 30;
-  if (bx < margin || by < margin || bx > size - margin || by > size - margin) return false;
+  // the city may spread out into the countryside, but not off the map
+  if (!onLand(bx, by, 30)) return false;
   const len = Math.hypot(bx - ax, by - ay);
   for (let s = 0; s <= len; s += 6) {
     const x = ax + ((bx - ax) * s) / len, y = ay + ((by - ay) * s) / len;
-    const t = tileOf(w, x, y);
-    if (w.kind[t] === 'water' || (w.kind[t] === 'rock' && kind !== 'country')) return false;
+    const k = kindAt(w, x, y);
+    if (k === 'water' || (k === 'rock' && kind !== 'country')) return false;
   }
   if (!walkable(w, bx, by)) return false;
   const ix = index(ctx);
@@ -283,14 +282,13 @@ function clearLotsUnder(ctx: Ctx, e: RoadEdge): void {
 export const lotFail = { terrain: 0, lot: 0, edge: 0, ok: 0 };
 function lotFits(ctx: Ctx, box: OBB, ownEdge: number): boolean {
   const w = ctx.s.world;
-  const size = mapSize(w);
   // terrain: corners, edge midpoints and center must be usable land
   for (const [sx, sy] of [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const x = box.cx + box.ux * box.hw * sx * 0.95 + -box.uy * box.hd * sy * 0.95;
     const y = box.cy + box.uy * box.hw * sx * 0.95 + box.ux * box.hd * sy * 0.95;
-    if (x < 10 || y < 10 || x > size - 10 || y > size - 10) return false;
-    const t = tileOf(w, x, y);
-    if (w.kind[t] === 'water' || w.kind[t] === 'rock') { lotFail.terrain++; return false; }
+    if (!onLand(x, y, 10)) return false;
+    const k = kindAt(w, x, y);
+    if (k === 'water' || k === 'rock') { lotFail.terrain++; return false; }
   }
   const ix = index(ctx);
   const r = Math.hypot(box.hw, box.hd) + 40;
@@ -304,6 +302,33 @@ function lotFits(ctx: Ctx, box: OBB, ownEdge: number): boolean {
   }
   lotFail.ok++;
   return true;
+}
+
+/**
+ * One lot on a side of a road, `along` metres from its start (its center),
+ * `w` wide and up to `d` deep (shallower if that's all that fits). Returns
+ * the lot, or null if nothing fits there.
+ */
+export function addLotAt(ctx: Ctx, e: RoadEdge, side: 1 | -1, along: number, w: number, d: number, zone: Zone, accept?: (x: number, y: number) => boolean): Lot | null {
+  const a = ctx.nodeById.get(e.a)!, b = ctx.nodeById.get(e.b)!;
+  const dx = (b.x - a.x) / e.len, dy = (b.y - a.y) / e.len;
+  const nx = -dy * side, ny = dx * side;
+  const setback = halfSpan(e) + 0.6;
+  const angle = Math.atan2(-ny, -nx);
+  for (const dd of [d, d * 0.75, d * 0.55, d * 0.4]) {
+    if (dd < 12) break;
+    const x = a.x + dx * along + nx * (setback + dd / 2), y = a.y + dy * along + ny * (setback + dd / 2);
+    // every corner must be acceptable to the caller (e.g. outside the city's square)
+    if (accept && ![[1, 1], [1, -1], [-1, 1], [-1, -1]].every(([u, v]) => accept(x + dx * (w / 2) * u + nx * (dd / 2) * v, y + dy * (w / 2) * u + ny * (dd / 2) * v))) continue;
+    if (!lotFits(ctx, obb(x, y, angle, w, dd), e.id)) continue;
+    const lot: Lot = { id: newId(ctx), edge: e.id, side, t: along / e.len, x, y, angle, w, d: dd, zone, owner: landHooks.ownerAt(ctx, x, y), building: -1, forSale: 0 };
+    lot.forSale = landHooks.priceOf(ctx, lot);
+    ctx.s.roads.lots.push(lot);
+    ctx.lotById.set(lot.id, lot);
+    indexAdd(ctx, (ix) => indexLot(ix, lot));
+    return lot;
+  }
+  return null;
 }
 
 /** Divide both sides of a road into lots. */
@@ -422,7 +447,7 @@ function makePlan(ctx: Ctx, cx: number, cy: number, rot: number): void {
   }
 }
 
-function nodeNear(ctx: Ctx, x: number, y: number, r: number): RoadNode | undefined {
+export function nodeNear(ctx: Ctx, x: number, y: number, r: number): RoadNode | undefined {
   for (const n of ctx.s.roads.nodes) if (Math.abs(n.x - x) < r && Math.abs(n.y - y) < r && Math.hypot(n.x - x, n.y - y) < r) return n;
   return undefined;
 }
@@ -476,21 +501,72 @@ export function initRoads(ctx: Ctx, cx: number, cy: number): void {
     last = addNode(ctx, cx + Math.cos(rot) * 60, cy + Math.sin(rot) * 60);
     addEdge(ctx, first, last, 'avenue', true, 'Main Street');
   }
-  // beyond town it carries on as a country highway to the edge of the map
+  // beyond town it carries on as a country highway to the edge of the city's square (and on through the countryside, see countryside.ts)
   const size = mapSize(ctx.s.world);
-  for (const [mid, dir, side] of [[last, rot, 1], [first, rot + Math.PI, 2]] as const) {
-    let px = mid.x, py = mid.y;
-    let prev = mid;
-    for (let step = 0; step < 14; step++) {
-      const ang = dir + (hash2(step, side, ctx.s.seed + 77) - 0.5) * 0.25;
-      const nx = px + Math.cos(ang) * 130, ny = py + Math.sin(ang) * 130;
-      if (nx < 40 || ny < 40 || nx > size - 40 || ny > size - 40) break;
-      if (!roadFits(ctx, px, py, nx, ny, 'country', [prev.id])) break;
-      const n = addNode(ctx, nx, ny);
-      addEdge(ctx, prev, n, step < 2 ? 'avenue' : 'country', true, 'Route 9');
-      prev = n; px = nx; py = ny;
+  for (const [mid, dir] of [[last, rot], [first, rot + Math.PI]] as const) {
+    // where the straight line out hits the edge (a little inside it)
+    const c = Math.cos(dir), sn = Math.sin(dir);
+    const tEdge = Math.min(c > 0 ? (size - 45 - mid.x) / c : c < 0 ? (45 - mid.x) / c : Infinity, sn > 0 ? (size - 45 - mid.y) / sn : sn < 0 ? (45 - mid.y) / sn : Infinity);
+    layHighway(ctx, mid, mid.x + c * tEdge, mid.y + sn * tEdge, 2);
+  }
+}
+
+/**
+ * Lay Route 9 from a node toward a point, around lakes (a path over the land,
+ * then cut into straight stretches of up to 130 m with a slight wobble).
+ * The first `avenues` stretches are town avenue. Returns where it got to.
+ */
+export function layHighway(ctx: Ctx, start: RoadNode, tx: number, ty: number, avenues = 0): RoadNode {
+  const w = ctx.s.world;
+  // aim at dry land: slide the target along until it isn't in the water
+  if (!walkable(w, tx, ty)) {
+    const ang = Math.atan2(ty - start.y, tx - start.x) + Math.PI / 2;
+    for (let k = 1; k < 40; k++) {
+      const o = Math.ceil(k / 2) * 30 * (k % 2 ? 1 : -1);
+      if (walkable(w, tx + Math.cos(ang) * o, ty + Math.sin(ang) * o)) { tx += Math.cos(ang) * o; ty += Math.sin(ang) * o; break; }
     }
   }
+  let path: number[];
+  const S = mapSize(w);
+  if (inGrid(w, start.x, start.y) && !inGrid(w, tx, ty)) {
+    // out of the city's square: around the lakes to a dry spot on its edge, then straight on (the countryside has no lakes)
+    const t = Math.min(...[[tx - start.x, 0 - start.x], [tx - start.x, S - start.x], [ty - start.y, 0 - start.y], [ty - start.y, S - start.y]]
+      .map(([d, to]) => (d !== 0 && to / d > 0 ? to / d : Infinity)));
+    const ex = Math.min(S - 3, Math.max(3, start.x + (tx - start.x) * t)), ey = Math.min(S - 3, Math.max(3, start.y + (ty - start.y) * t));
+    const vertical = ex <= 3 || ex >= S - 3;
+    const inward = vertical ? (ex <= 3 ? 1 : -1) : (ey <= 3 ? 1 : -1);
+    let exit: [number, number] | null = null;
+    for (let k = 0; k < 80 && !exit; k++) {
+      const o = Math.ceil(k / 2) * 20 * (k % 2 ? 1 : -1);
+      const x = vertical ? ex : Math.min(S - 3, Math.max(3, ex + o)), y = vertical ? Math.min(S - 3, Math.max(3, ey + o)) : ey;
+      const ix = vertical ? x + inward * 40 : x, iy = vertical ? y : y + inward * 40;
+      if (walkable(w, x, y) && walkable(w, ix, iy) && kindAt(w, x, y) !== 'rock') exit = [x, y];
+    }
+    path = exit ? [...wildPath(w, start.x, start.y, exit[0], exit[1]), tx, ty] : wildPath(w, start.x, start.y, tx, ty);
+  } else path = wildPath(w, start.x, start.y, tx, ty);
+  let prev = start, step = 0;
+  let ax = start.x, ay = start.y;
+  for (let k = 0; k < path.length; k += 2) {
+    const bx = path[k], by = path[k + 1];
+    const len = Math.hypot(bx - ax, by - ay);
+    const n = Math.max(1, Math.ceil(len / 130));
+    for (let i = 1; i <= n; i++) {
+      let x = ax + ((bx - ax) * i) / n, y = ay + ((by - ay) * i) / n;
+      if (i < n) {
+        const o = (hash2(step, start.id, ctx.s.seed + 77) - 0.5) * 18;
+        const wx = x - ((by - ay) / len) * o, wy = y + ((bx - ax) / len) * o;
+        if (roadFits(ctx, prev.x, prev.y, wx, wy, 'country', [prev.id])) { x = wx; y = wy; }
+      }
+      if (Math.hypot(x - prev.x, y - prev.y) < 4) continue;
+      if (!roadFits(ctx, prev.x, prev.y, x, y, 'country', [prev.id])) return prev;
+      const node = addNode(ctx, x, y);
+      addEdge(ctx, prev, node, step < avenues ? 'avenue' : 'country', true, 'Route 9');
+      prev = node;
+      step++;
+    }
+    ax = bx; ay = by;
+  }
+  return prev;
 }
 
 /** Divide every road that has no lots yet (after land has owners). */
@@ -869,7 +945,7 @@ export function markLotUsed(ctx: Ctx, l: Lot): void {
       const dx = x - l.x, dy = y - l.y;
       const along = dx * Math.cos(l.angle) + dy * Math.sin(l.angle);
       const across = dx * Math.sin(l.angle) - dy * Math.cos(l.angle);
-      if (Math.abs(along) <= l.d / 2 && Math.abs(across) <= l.w / 2) useTile(w, tileOf(w, x, y));
+      if (Math.abs(along) <= l.d / 2 && Math.abs(across) <= l.w / 2 && inGrid(w, x, y)) useTile(w, tileOf(w, x, y));
     }
   }
 }

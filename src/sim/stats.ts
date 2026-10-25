@@ -5,7 +5,7 @@ import { averageRent } from './housing';
 import { refPrice } from './market';
 import { debtOf } from './finance';
 import { assessLot, mainPolity, treasury } from './government';
-import { dayOf } from './ctx';
+import { cityPop, dayOf } from './ctx';
 import { RENTALS } from './housing';
 import { isOnline } from './online';
 import { compass } from './ideology';
@@ -298,6 +298,7 @@ export function recordDaily(ctx: Ctx): void {
   const rec: DailyStat = {
     day: today - 1, t: s.tick, // the day that just ended
     pop: s.people.length,
+    rural: s.people.length - cityPop(ctx),
     arrivals: flows.arrivals, left: flows.emigrated, deaths: flows.deaths,
     employed, owners, jobless, homeless, renters, homeowners, trailers, online,
     cars: s.vehicles.filter((v) => v.kind === 'car').length,

@@ -1,6 +1,6 @@
-import { MINUTES_PER_DAY, OUTSIDE, POLITICS, POPULATION, STATS, WAGES } from './config';
+import { COUNTRY, MINUTES_PER_DAY, OUTSIDE, POLITICS, POPULATION, STATS, WAGES } from './config';
 import { dayOf, hourOf, log, makeCtx, minuteOfDay, type Ctx } from './ctx';
-import { decide, reviewJob } from './ai';
+import { decide, decideCountry, reviewJob } from './ai';
 import { createBuilding, decayBuildings, gradeLot } from './buildings';
 import { onFinished, sellHooks } from './hooks';
 import { foodIn, slotsFor } from './goods';
@@ -9,7 +9,8 @@ import { endContract, hire, jobsDaily, postJob, processApplications } from './jo
 import { housingDaily, moveIn, moveOut } from './housing';
 import { marketHourly, marketNewDay, outsideTrade, spoilFood } from './market';
 import { causeOfDeath, createPerson, personDaily, setBrainSource, spawnNewcomer, updateNeeds } from './people';
-import { ensurePlaces, placesDaily } from './places';
+import { countryPlaces, ensurePlaces, placesDaily } from './places';
+import { countryDaily, generateCountryside, isRural } from './countryside';
 import { recordDaily } from './stats';
 import { initRoads, makeAllLots, rezone } from './roads';
 import { seedRng } from './rng';
@@ -84,7 +85,7 @@ export function createState(seed: number): SimState {
     market: { orders: [], last: zero(), day: Object.fromEntries(GOODS.map((g) => [g, { q: 0, v: 0 }])) as SimState['market']['day'], trades: [] },
     conversations: [], posts: [], stats: [], log: [], scenarios: [],
     counters: { arrivals: 0, deaths: 0, trades: 0, hires: 0, layoffs: 0, quits: 0 },
-    center: { x: 0, y: 0 }, gates: [],
+    center: { x: 0, y: 0 }, gates: [], data: { mapCells: 1 },
   };
   const ctx = makeCtx(s);
   const size = mapSize(s.world);
@@ -188,6 +189,8 @@ export function createState(seed: number): SimState {
   }
   // the city's first project: a city hall (meetings and votes are held on the site until it's done)
   buildCityHall(ctx, g);
+  // the farm country around it, with its villages
+  generateCountryside(ctx);
   return s;
 }
 
@@ -227,6 +230,8 @@ export class Simulation {
       for (const l of state.roads.lots) if (l.building >= 0) gradeLot(this.ctx, l);
       state.data = { ...(state.data ?? {}), graded: 1 };
     }
+    // cities from before the map had countryside: lay it out around them
+    if (!state.data?.country) generateCountryside(this.ctx);
   }
 
   get tick(): number {
@@ -245,14 +250,20 @@ export class Simulation {
       // after an update, someone doing something steady sleeps until their next turn
       const r = p as Runtime;
       if (r[WAKE] !== undefined && r[WAKE] > s.tick) continue;
-      const dt = Math.max(1, Math.min(stride * 2, s.tick - (r[LAST] ?? s.tick - 1)));
+      // countryside people are a simpler program, looked at less often
+      const rural = isRural(ctx, p);
+      const st = rural ? stride * COUNTRY.stride : stride;
+      const dt = Math.max(1, Math.min(st * 2, s.tick - (r[LAST] ?? s.tick - 1)));
       r[LAST] = s.tick;
       p.px = p.x;
       p.py = p.y;
       if (p.task && p.needs.food < 12 && foodIn(p.inv) < 1 && s.tick - p.task.started > 90 && p.driving < 0) p.task = null;
       if (!p.task) {
-        if (p.brainMem) learn(ctx, p);
-        decide(ctx, p);
+        if (rural) decideCountry(ctx, p);
+        else {
+          if (p.brainMem) learn(ctx, p);
+          decide(ctx, p);
+        }
       }
       clock.dt = dt;
       const working = runStep(ctx, p);
@@ -260,7 +271,7 @@ export class Simulation {
       clock.dt = 1;
       if (p.saying && s.tick > p.sayingUntil) p.saying = '';
       if (p.needs.health <= 0) dying.push(p);
-      r[WAKE] = steadyStep(ctx, p) ? s.tick + stride - ((s.tick + p.id) % stride) : undefined;
+      r[WAKE] = steadyStep(ctx, p) ? s.tick + st - ((s.tick + p.id) % st) : undefined;
     }
     outsideTrafficMinute(ctx);
     if (mod % 10 === 0) this.conversations();
@@ -269,7 +280,13 @@ export class Simulation {
     if (mod % 60 === 0) {
       // the places people know: each person's daily look round, spread over the day
       const hour = mod / 60;
-      for (const p of s.people) if (p.id % 24 === hour) { if (p.places) placesDaily(ctx, p); else ensurePlaces(ctx, p); }
+      const day = Math.floor(s.tick / MINUTES_PER_DAY);
+      for (const p of s.people) {
+        if (p.id % 24 !== hour) continue;
+        if (isRural(ctx, p)) { if (!p.places || day % 3 === p.id % 3) countryPlaces(ctx, p); }
+        else if (p.places) placesDaily(ctx, p);
+        else ensurePlaces(ctx, p);
+      }
       marketHourly(ctx);
       outsideCouriers(ctx);
       dispatchOutside(ctx);
@@ -311,6 +328,7 @@ export class Simulation {
     scenariosDaily(ctx);
     for (const p of s.people) { personDaily(ctx, p); pruneRelations(p); politicsDaily(ctx, p); }
     housingDaily(ctx);
+    countryDaily(ctx);
     jobsDaily(ctx);
     this.emigration();
     loansDaily(ctx);
@@ -374,7 +392,9 @@ export class Simulation {
   private arrivals(): void {
     const ctx = this.ctx;
     const s = ctx.s;
-    if (s.people.length >= POPULATION.cap) return;
+    // (the cap is on the city: the countryside's simpler people don't count toward it)
+    const city = s.people.reduce((n, p) => n + (isRural(ctx, p) ? 0 : 1), 0);
+    if (city >= POPULATION.cap) return;
     const g = mainPolity(ctx);
     const policy = g?.policy.immigration ?? 'open';
     if (policy === 'closed') return;
@@ -383,14 +403,14 @@ export class Simulation {
     const jobless = s.people.length ? s.people.filter((p) => p.job < 0 && !p.firms.length).length / s.people.length : 0;
     const prospects = Math.max(0.15, Math.min(1.3, 1.3 - 2 * jobless));
     // open positions pull people in (hunger, joblessness and people sleeping rough in the city put them off)
-    const most = POPULATION.arrivalMax + Math.floor(s.people.length / 20);
+    const most = POPULATION.arrivalMax + Math.floor(city / 20);
     const openings = s.postings.reduce((n, x) => n + (x.openings ?? 1), 0);
     const homeless = s.people.length ? s.people.filter((p) => p.home < 0).length / s.people.length : 0;
     const housing = Math.max(0.2, 1 - 2.5 * homeless);
     let expected = (POPULATION.arrivalBase + POPULATION.arrivalPerOpening * Math.min(most, openings)) * (0.4 + 0.6 * fed) * prospects * housing;
     if (policy === 'limited') expected *= 0.35;
     let n = Math.floor(expected) + (ctx.rng.chance(expected % 1) ? 1 : 0);
-    n = Math.min(n, most, POPULATION.cap - s.people.length);
+    n = Math.min(n, most, POPULATION.cap - city);
     for (let i = 0; i < n; i++) spawnNewcomer(ctx);
     if (s.people.length === 0) spawnNewcomer(ctx);
   }

@@ -48,6 +48,8 @@ export interface World {
   /** 1 where a road, lot or building covers the tile (nature cleared). */
   used: number[];
   ver: number; // bumped when resources change enough to redraw nature
+  /** The world's seed (the countryside beyond the grid is computed from it). */
+  seed?: number;
 }
 
 // ------------------------------------------------------------------- roads
@@ -423,6 +425,7 @@ export interface Brain {
 export type BuildingKind =
   | 'trailer' // a mobile home, bought from an outside dealer and set on a lot (where newcomers start out)
   | 'house'
+  | 'farmhouse' // a farm family's house by the lane (room for the family and a hired hand or two)
   | 'apartments' // modern mid-rise apartment block (3–10 floors)
   | 'tower' // residential high-rise (10–50 floors), shops on the ground floor downtown
   | 'officetower' // office high-rise built by a developer and leased out floor by floor
@@ -1133,6 +1136,8 @@ export interface DailyStat {
   t: number;
   // people
   pop: number;
+  /** Of them, living out in the countryside. */
+  rural?: number;
   arrivals: number; // during the day
   left: number;
   deaths: number;
@@ -1265,4 +1270,6 @@ export interface SimState {
   center: { x: number; y: number };
   /** Where the highway leaves the map (outside trucks come and go here). */
   gates: { x: number; y: number }[];
+  /** Where the highway leaves the whole map, past the countryside: outside trucks come and go here (newcomers are dropped off at `gates`, the edge of town). */
+  farGates?: { x: number; y: number }[];
 }

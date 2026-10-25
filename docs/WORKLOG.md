@@ -305,3 +305,10 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   vegfarm/dairyfarm/ranch/bakery/dairyplant/meatplant (3D uses farm/food-plant looks for now), EDIBLE/SPOIL/foodIn/takeFood,
   food baskets (ai.ts foodBasket, shop step `list`), variety-aware eating and diet happiness, restaurant meal mix, save
   upgrade (save.ts `upgrade`). 30-day check: 0 deaths in two worlds.
+- Countryside (stage B + basic 3D): MAP −2000..4000 (config MAP/COUNTRY); world.ts inGrid/onLand/beyondGrid/kindAt/fertilityAt and
+  heightAt beyond the grid (countryHeight); territory cells cover the whole map (government.ts cellOf, save.ts remaps old cells);
+  roads.ts addLotAt/layHighway (Route 9 around lakes); countryside.ts generateCountryside (highway, lanes, villages, farmsteads,
+  farm families, village shop/pub), countryDaily (own produce, lodging, leaving for the city, farm arrivals); ai.ts decideCountry;
+  places.ts countryPlaces; sim.ts stride ×3 for rural, cap on city pop; ctx.ts cityPop used for city-size formulas; farmhouse kind;
+  render: terrain buildOuter rings on heightAt to the map edge + field colors (renderer countryFields). Checks: 30 days seeds 4/11
+  0 deaths; old 4,257-person save loads (countryside laid out in 66 ms).

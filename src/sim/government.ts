@@ -12,8 +12,8 @@
 // assessments), the treasury (taxes, welfare, stipends), staffing, and
 // public works (laying out and paving streets, building a city hall).
 
-import { LAND, MINUTES_PER_DAY, POLITICS, WAGES, WORLD } from './config';
-import { cashOf, controllerOf, dayOf, headOf, isPublic, log, newId, pay, TERRITORY, type Ctx } from './ctx';
+import { LAND, MAP, MINUTES_PER_DAY, POLITICS, WAGES } from './config';
+import { cashOf, cityPop, controllerOf, dayOf, headOf, isPublic, log, newId, pay, TERRITORY, type Ctx } from './ctx';
 import { materialsFor, ROLE } from './goods';
 import { createBuilding, findLot } from './buildings';
 import { layOff, marketWage, postJob } from './jobs';
@@ -26,16 +26,17 @@ import { tally } from './stats';
 
 // ------------------------------------------------------------------ territory
 
-const COLS = Math.ceil((WORLD.size * WORLD.tile) / POLITICS.cell);
+const COLS = Math.ceil((MAP.max - MAP.min) / POLITICS.cell);
 
+/** The territory cell a point is in (cells cover the whole map, the countryside too); -1 off the map. */
 export function cellOf(x: number, y: number): number {
-  const cx = Math.max(0, Math.min(COLS - 1, Math.floor(x / POLITICS.cell)));
-  const cy = Math.max(0, Math.min(COLS - 1, Math.floor(y / POLITICS.cell)));
+  const cx = Math.floor((x - MAP.min) / POLITICS.cell), cy = Math.floor((y - MAP.min) / POLITICS.cell);
+  if (cx < 0 || cy < 0 || cx >= COLS || cy >= COLS) return -1;
   return cy * COLS + cx;
 }
 
 export function cellCenter(cell: number): [number, number] {
-  return [((cell % COLS) + 0.5) * POLITICS.cell, (Math.floor(cell / COLS) + 0.5) * POLITICS.cell];
+  return [MAP.min + ((cell % COLS) + 0.5) * POLITICS.cell, MAP.min + (Math.floor(cell / COLS) + 0.5) * POLITICS.cell];
 }
 
 export const TERRITORY_COLS = COLS;
@@ -105,7 +106,7 @@ landHooks.priceOf = (ctx, lot) => listPrice(ctx, lot);
 /** What a lot is worth: its size and zone, the city's size, demand for land, and what it last sold for. */
 export function assessLot(ctx: Ctx, lot: Lot): number {
   const area = lot.w * lot.d;
-  const pop = ctx.s.people.length;
+  const pop = cityPop(ctx);
   const demand = 1 + Math.min(1.5, Math.max(0, (ctx.s.landDemand?.[lot.zone] ?? 0) / 20));
   // and the closer to the center, the dearer (within its zone)
   const central = Math.max(0.6, 1.35 - Math.hypot(lot.x - ctx.s.center.x, lot.y - ctx.s.center.y) / 600);
@@ -124,7 +125,7 @@ export function buildingValue(ctx: Ctx, b: Building): number {
 
 /** Asking price for public land (and the Territory's frontier prices). */
 function listPrice(ctx: Ctx, lot: Lot): number {
-  if (lot.owner === TERRITORY.id) return LAND.territoryPrice[lot.zone] ?? 30;
+  if (lot.owner === TERRITORY.id) return Math.round(Math.max(LAND.territoryPrice[lot.zone] ?? 30, lot.w * lot.d * LAND.territoryPerM2));
   const g = ctx.govOfFirm.get(lot.owner);
   if (!g) return lot.forSale;
   if (g.policy.landPrice <= 0) return 1; // homesteading: a filing fee
@@ -569,7 +570,7 @@ export function buildCityHall(ctx: Ctx, g: Polity): Building | null {
   if (!f) return null;
   const lot = findLot(ctx, 'cityhall', { x: g.cx ?? ctx.s.center.x, y: g.cy ?? ctx.s.center.y }, f.id);
   if (!lot) return null;
-  const floors = Math.min(4, 2 + Math.floor(ctx.s.people.length / 300));
+  const floors = Math.min(4, 2 + Math.floor(cityPop(ctx) / 300));
   const b = createBuilding(ctx, 'cityhall', lot, f.id, floors, false, f.id);
   startConstruction(ctx, f.id, b);
   if (b.builder < 0) b.builder = f.id; // the public works crew builds it

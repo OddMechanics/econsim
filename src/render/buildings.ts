@@ -1319,7 +1319,7 @@ function netco(c: Ctx): void {
 // ================================================================ dispatch
 
 const BUILDERS: Record<BuildingKind, (c: Ctx) => void> = {
-  plaza, park, trailer, house, apartments, tower, officetower: tower,
+  plaza, park, trailer, house, farmhouse: house, apartments, tower, officetower: tower,
   farm, lumberyard, quarry, claypit, mine,
   sawmill, brickworks, steelmill, cementworks, glassworks, foodplant,
   // (new farm and food-plant kinds use the farm and food-plant looks until they get their own)

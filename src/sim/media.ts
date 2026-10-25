@@ -16,7 +16,7 @@
 // influencers); the sites earn from ads, commissions and fees.
 
 import { MINUTES_PER_DAY } from './config';
-import { controllerOf, dayOf, hourOf, log, nameOf, newId, type Ctx } from './ctx';
+import { cityPop, controllerOf, dayOf, hourOf, log, nameOf, newId, type Ctx } from './ctx';
 import { BUILDINGS, GOOD, ROLE } from './goods';
 import { compass, distance, expose } from './ideology';
 import { channelName, siteName } from './names';
@@ -54,7 +54,7 @@ onFinished.push((ctx, b) => {
  */
 function missingSite(ctx: Ctx): SiteKind {
   const have = new Set(ctx.s.firms.filter((x) => x.site && !x.closed).map((x) => x.site!.kind));
-  const pop = ctx.s.people.length;
+  const pop = cityPop(ctx);
   const count = (k: string) => ctx.s.buildings.filter((b) => b.kind === k && b.built && !b.ruined).length;
   const wants: [SiteKind, boolean][] = [
     ['social', true],

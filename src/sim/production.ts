@@ -6,7 +6,7 @@
 // register, and office staff type away at computers.
 
 import { GATHER, SERVICE_EXPORTS } from './config';
-import { dayOf, type Ctx } from './ctx';
+import { cityPop, dayOf, type Ctx } from './ctx';
 import { BUILDINGS, emptyInv, GOOD } from './goods';
 import { buildMinute, deliveredFraction, farmFertility } from './buildings';
 import { efficiency } from './firms';
@@ -186,7 +186,7 @@ export function produceMinute(ctx: Ctx, worker: Person, b: Building, f: Firm | u
  */
 /** What the world buys at full price in one of the two markets each day. */
 export function serviceDemand(ctx: Ctx): number {
-  return SERVICE_EXPORTS.base + ctx.s.people.length * SERVICE_EXPORTS.perPerson;
+  return SERVICE_EXPORTS.base + cityPop(ctx) * SERVICE_EXPORTS.perPerson;
 }
 
 /** The two markets: software ('Soft') for programmers, professional services ('Pro') for everyone else. */

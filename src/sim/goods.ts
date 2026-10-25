@@ -198,6 +198,11 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     materials: { planks: 55, bricks: 55, concrete: 30, glass: 6 }, perFloor: { planks: 30, bricks: 40, concrete: 8, glass: 5 },
     workHours: 90, shelter: 1, comfort: 0.65, unitsPerFloor: 1, decayPerDay: 0.0015, jobs: [], hours: h(0, 0), minFunds: 0,
   },
+  farmhouse: {
+    label: 'Farmhouse', category: 'home', zones: ['rural'], w: 12, d: 10, floors: [1, 2],
+    materials: { planks: 60, bricks: 60, concrete: 30, glass: 6 }, perFloor: { planks: 30, bricks: 40, concrete: 8, glass: 5 },
+    workHours: 100, shelter: 1, comfort: 0.6, unitsPerFloor: 2, decayPerDay: 0.0015, jobs: [], hours: h(0, 0), minFunds: 0,
+  },
   apartments: {
     label: 'Apartment block', category: 'home', zones: ['urban', 'suburb'], w: 17, d: 17, floors: [3, 10],
     materials: { concrete: 46, bricks: 24, steel: 6, glass: 8 }, perFloor: { concrete: 24, bricks: 14, steel: 3, glass: 6 },

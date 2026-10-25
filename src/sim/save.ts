@@ -39,4 +39,15 @@ function upgrade(s: SimState): void {
   for (const v of s.vehicles) fill(v.cargo);
   fill(s.market.last);
   for (const g of GOODS) if (!s.market.day[g]) s.market.day[g] = { q: 0, v: 0 };
+  // the map grew from the city's 2 km square to 6 km of countryside around it: territory cells are
+  // numbered across the whole map now (the old square is 40 cells in from its corner)
+  if (!s.data?.mapCells) {
+    const remap = (c: number) => { const ox = c % 40, oy = Math.floor(c / 40); return (oy + 40) * 120 + (ox + 40); };
+    for (const g of s.polities) {
+      g.cells = g.cells.map(remap);
+      g.districts = g.districts.map((d) => d.map(remap));
+    }
+    s.data = { ...(s.data ?? {}), mapCells: 1 };
+  }
+  s.world.seed ??= s.seed;
 }

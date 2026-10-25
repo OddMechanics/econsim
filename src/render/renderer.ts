@@ -15,13 +15,13 @@ import { BUILDINGS, invWeight } from '../sim/goods';
 import { FLOOR_H, stationsOf } from '../sim/layout';
 import type { Simulation } from '../sim/sim';
 import type { Building, Person } from '../sim/types';
-import { heightAt } from '../sim/world';
+import { heightAt, inGrid } from '../sim/world';
 import { BuildingRenderer, standHeight, type BuildingLook } from './buildings';
 import { AdRenderer } from './ads';
 import { clothColor } from './palette';
 import { PeopleRenderer, type PersonVisual } from './people';
 import { ROAD_SURFACE, RoadRenderer } from './roads';
-import { TerrainRenderer } from './terrain';
+import { TerrainRenderer, type Field } from './terrain';
 import { VehicleRenderer, type VehicleVisual } from './vehicles';
 import { CameraController, type CameraMode, type Subject } from './camera';
 
@@ -77,7 +77,7 @@ export class WorldRenderer {
   private label: HTMLDivElement;
   private bubbles: HTMLDivElement;
   private bubblePool: HTMLDivElement[] = [];
-  private clock = { nature: 0, roads: 0 };
+  private clock = { nature: 0, roads: 0, fields: 99 };
   private natureVer = -1;
   private personVisuals: PersonVisual[] = [];
   private vehicleVisuals: VehicleVisual[] = [];
@@ -157,6 +157,19 @@ export class WorldRenderer {
     return ads;
   }
 
+  /** The countryside's farm lots and what grows on them (for the ground's colors). */
+  private countryFields(): Field[] {
+    const s = this.sim.state, w = s.world;
+    const out: Field[] = [];
+    for (const l of s.roads.lots) {
+      if (l.zone !== 'rural' || inGrid(w, l.x, l.y)) continue;
+      const b = l.building >= 0 ? this.sim.ctx.bById.get(l.building) : undefined;
+      const kind = !b ? (l.w > 100 ? 'fallow' : '') : b.kind === 'farm' || b.kind === 'vegfarm' || b.kind === 'dairyfarm' || b.kind === 'ranch' ? b.kind : 'yard';
+      if (kind) out.push({ x: l.x, y: l.y, angle: l.angle, w: l.w, d: l.d, kind, look: l.id % 7 });
+    }
+    return out;
+  }
+
   /** Swap in a different simulation (new world or loaded save). */
   setSim(sim: Simulation): void {
     this.sim = sim;
@@ -199,6 +212,10 @@ export class WorldRenderer {
       this.natureVer = s.world.ver;
       this.clock.nature = 0;
       this.terrain.updateNature(s.world);
+    }
+    if ((this.clock.fields += dtReal) > 3) {
+      this.clock.fields = 0;
+      this.terrain.setFields(this.countryFields());
     }
     mark('nature');
     if (this.clock.roads > 0.5) {

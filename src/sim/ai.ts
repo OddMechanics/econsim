@@ -12,7 +12,7 @@
 
 import { MINUTES_PER_DAY, MOVE, ONLINE, OUTSIDE } from './config';
 import { serviceDemand, serviceRate } from './production';
-import { dayOf, dayStart, hourOf, type Ctx } from './ctx';
+import { cityPop, dayOf, dayStart, hourOf, type Ctx } from './ctx';
 import { BUILDINGS, BUSINESS_KINDS, comfortOf, EDIBLE, foodIn, GOOD, ROLE } from './goods';
 import { deliveredFraction } from './buildings';
 import { buildCost, sitesOf } from './firms';
@@ -791,7 +791,7 @@ function businessOptions(v: View): Option[] {
   if (p.firms.length >= 3) return out;
   const t = p.traits;
   if (t.ambition + t.risk < 0.7) return out;
-  const pop = ctx.s.people.length;
+  const pop = cityPop(ctx);
   const wage = p.hourly * 8 * 1.05;
   const credit = creditOf(ctx, p);
   // too little money even for a small start (or to ask the crowd): no point weighing every business
@@ -1297,6 +1297,48 @@ export function decide(ctx: Ctx, p: Person): void {
     p.decision = { t: ctx.s.tick, chosen: o.label, why: o.why, options: opts.slice(0, 6).map(({ label, score, why }) => ({ label, score, why })) };
     setTask(ctx, p, o.label, steps);
     if (learned) remember(ctx, p, categoryOf(o.label), learned.x);
+    return;
+  }
+}
+
+/**
+ * Countryside people live a simpler life, and are a simpler program: a short
+ * list of things to do (sleep, the farm or their job, meals at home, the
+ * village shop, the pub, TV, a walk, voting) instead of everything the city
+ * offers. They don't weigh starting businesses, moving house or what's for
+ * sale in town, and have no learned habits. Out of work, they ask at the farms
+ * around (and after a while move to the city, see countryDaily).
+ */
+export function decideCountry(ctx: Ctx, p: Person): void {
+  const v = makeView(ctx, p);
+  const opts: Option[] = [];
+  const add = (o: Option | null) => { if (o) opts.push(o); };
+  add(sleepOption(v));
+  add(workOption(v));
+  opts.push(...ownWorkOptions(v));
+  add(eatAtHomeOption(v));
+  opts.push(...groceryOptions(v));
+  add(eatOutOption(v));
+  add(soupKitchenOption(v));
+  if (p.job < 0 && !p.firms.length && (p.cooldown.jobcheck ?? 0) <= ctx.s.tick) {
+    opts.push(...jobOptions(v, 0));
+    p.cooldown.jobcheck = ctx.s.tick + 360;
+  }
+  // clothes, a TV, furniture: once in a while (by the week, not the hour)
+  if ((p.cooldown.shopcheck ?? 0) <= ctx.s.tick) {
+    opts.push(...durableOptions(v));
+    p.cooldown.shopcheck = ctx.s.tick + 7 * 1440;
+  }
+  opts.push(...leisureOptions(v).filter((o) => !/Net at home|phone/.test(o.label)));
+  opts.push(...politicsOptions(v).filter((o) => /^Go vote|^Go to /.test(o.label)));
+  if (v.night) for (const o of opts) if (!/sleep|home|eat|Shop for food|TV/i.test(o.label)) o.score -= 2;
+  for (const o of opts) o.score += ctx.rng.range(-0.08, 0.08);
+  opts.sort((a, b) => b.score - a.score);
+  for (const o of opts) {
+    const steps = o.steps();
+    if (!steps || !steps.length) continue;
+    p.decision = { t: ctx.s.tick, chosen: o.label, why: o.why, options: opts.slice(0, 6).map(({ label, score, why }) => ({ label, score, why })) };
+    setTask(ctx, p, o.label, steps);
     return;
   }
 }

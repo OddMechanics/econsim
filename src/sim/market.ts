@@ -11,7 +11,7 @@
 // shops and online, and earn money from jobs and businesses.
 
 import { FOOD_SPOIL_PER_DAY, MARKET, MINUTES_PER_DAY, OUTSIDE } from './config';
-import { addCash, cashOf, log, newId, type Ctx } from './ctx';
+import { addCash, cashOf, cityPop, log, newId, type Ctx } from './ctx';
 import { GOOD, SPOIL } from './goods';
 import { createShipment } from './logistics';
 import { introduce, knows } from './contacts';
@@ -278,7 +278,7 @@ export function outsideTrade(ctx: Ctx): void {
   const m = ctx.s.market;
   for (const o of m.orders) if (o.who === OUTSIDE.id && o.side === 'bid') o.qty = 0;
   m.orders = m.orders.filter((o) => o.who !== OUTSIDE.id);
-  const scale = 1 + ctx.s.people.length / 300;
+  const scale = 1 + cityPop(ctx) / 300;
   for (const g of GOODS) {
     const world = OUTSIDE.prices[g] * (0.92 + 0.16 * ctx.rng.next());
     const made = g === 'tools' || g === 'furniture' || g === 'clothes' || g === 'computers' || g === 'cars' || g === 'steel' || g === 'glass';

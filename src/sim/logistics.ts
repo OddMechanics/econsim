@@ -83,8 +83,9 @@ function placeOf(ctx: Ctx, id: number, near?: { x: number; y: number }): { x: nu
 }
 
 export function gateNear(ctx: Ctx, x: number, y: number): { x: number; y: number } {
-  let best = ctx.s.gates[0] ?? { x: 0, y: 0 }, bd = Infinity;
-  for (const g of ctx.s.gates) { const d = Math.hypot(g.x - x, g.y - y); if (d < bd) { bd = d; best = g; } }
+  const gates = ctx.s.farGates?.length ? ctx.s.farGates : ctx.s.gates;
+  let best = gates[0] ?? { x: 0, y: 0 }, bd = Infinity;
+  for (const g of gates) { const d = Math.hypot(g.x - x, g.y - y); if (d < bd) { bd = d; best = g; } }
   return best;
 }
 

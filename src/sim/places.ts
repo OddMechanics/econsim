@@ -217,6 +217,31 @@ export function placesDaily(ctx: Ctx, p: Person): void {
   }
 }
 
+/**
+ * Countryside people's look round (every few days, not daily): forget what's
+ * stale, and know the nearest village shop, pub and farms hiring within a
+ * walk or a short drive of home, their work and their own business.
+ */
+export function countryPlaces(ctx: Ctx, p: Person): void {
+  const now = ctx.s.tick;
+  if (p.places) {
+    p.places = p.places.filter((pl) => {
+      if (!still(ctx.bById.get(pl.b), pl.k)) return false;
+      const src = pl.seen !== undefined ? 'visit' : pl.src;
+      return (now - pl.t) / MINUTES_PER_DAY < FORGET_DAYS[src] * 2;
+    });
+  } else p.places = [];
+  const home = ctx.bById.get(p.home);
+  const base = home ?? { x: p.x, y: p.y };
+  notice(ctx, p, base.x, base.y, 1500, 'near', { shop: 2, food: 1, out: 1, job: 3 });
+  const job = ctx.bById.get(ctx.cById.get(p.job)?.site ?? -1);
+  if (job) learnPlace(ctx, p, job, 'job', 'visit').seen = now;
+  for (const fid of p.firms) {
+    const f = ctx.fById.get(fid);
+    for (const id of f?.sites ?? []) { const b = ctx.bById.get(id); if (b) for (const k of placeKinds(b)) learnPlace(ctx, p, b, k, 'visit'); }
+  }
+}
+
 /** The first time (a newcomer, or a world saved before people kept lists): what's around them, and brands they know. */
 export function ensurePlaces(ctx: Ctx, p: Person): void {
   if (p.places) return;

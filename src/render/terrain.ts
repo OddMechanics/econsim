@@ -12,7 +12,8 @@ import {
 } from '@babylonjs/core';
 import { hash2 } from '../sim/rng';
 import type { World } from '../sim/types';
-import { fbm, heightAt, STONE_CAP, tileOf, WOOD_CAP } from '../sim/world';
+import { MAP } from '../sim/config';
+import { fbm, heightAt, kindAt, onLand, STONE_CAP, tileOf, WOOD_CAP } from '../sim/world';
 
 /** Y of the water surface (water tiles sit at -1.5). */
 export const WATER_LEVEL = -0.4;
@@ -54,6 +55,20 @@ function mix(out: RGB, c: RGB, t: number): void {
   out[1] += (c[1] - out[1]) * t;
   out[2] += (c[2] - out[2]) * t;
 }
+
+/** A field in the countryside: a farm lot and what's on it ('fallow' when nobody farms it). */
+export interface Field { x: number; y: number; angle: number; w: number; d: number; kind: string; look: number }
+
+const FIELD_CELL = 100;
+/** Field colors by what's grown (a few looks each: crops at different stages). */
+const FIELD: Record<string, RGB[]> = {
+  farm: [rgb('#c9b25a'), rgb('#b9a24c'), rgb('#93a446'), rgb('#d2bf72'), rgb('#a39053')], // wheat ripening, young green, stubble
+  vegfarm: [rgb('#4d7432'), rgb('#6b5a3a'), rgb('#5c8238')], // dark leafy rows, tilled soil
+  dairyfarm: [rgb('#5e9a3f'), rgb('#6aa244')], // lush pasture
+  ranch: [rgb('#7b9a4a'), rgb('#86a052')], // grazed pasture
+  fallow: [rgb('#8aa25a'), rgb('#94a464'), rgb('#7f9a55')], // meadow, unfarmed
+  yard: [rgb('#7f8d58')],
+};
 
 // ---------------------------------------------------------------- templates
 
@@ -548,77 +563,125 @@ export class TerrainRenderer {
 
   // ---------------------------------------------------- outside the map
 
+  /** The countryside's fields (farm lots out there), for coloring the ground beyond the city. */
+  private fields: Field[] = [];
+  private fieldCells = new Map<number, number[]>();
+  private fieldKey = '';
+
+  /** Tell the ground what grows where in the countryside (recolors only when something changed). */
+  setFields(list: Field[]): void {
+    const key = list.map((f) => `${Math.round(f.x)},${Math.round(f.y)},${f.kind}`).join(';');
+    if (key === this.fieldKey) return;
+    this.fieldKey = key;
+    this.fields = list;
+    this.fieldCells.clear();
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      const r = Math.hypot(f.w, f.d) / 2;
+      for (let cx = Math.floor((f.x - r) / FIELD_CELL); cx <= Math.floor((f.x + r) / FIELD_CELL); cx++) {
+        for (let cy = Math.floor((f.y - r) / FIELD_CELL); cy <= Math.floor((f.y + r) / FIELD_CELL); cy++) {
+          const k = cx * 10000 + cy;
+          const arr = this.fieldCells.get(k);
+          if (arr) arr.push(i); else this.fieldCells.set(k, [i]);
+        }
+      }
+    }
+    if (this.outer) this.colorOuter(this.outer.getVerticesData(VertexBuffer.PositionKind) as Float32Array, this.outerBase, true);
+  }
+
+  /** The field a point lies in, if any. */
+  private fieldAt(x: number, y: number): Field | undefined {
+    const ids = this.fieldCells.get(Math.floor(x / FIELD_CELL) * 10000 + Math.floor(y / FIELD_CELL));
+    if (!ids) return undefined;
+    for (const i of ids) {
+      const f = this.fields[i];
+      const dx = x - f.x, dy = y - f.y;
+      const c = Math.cos(f.angle), sn = Math.sin(f.angle);
+      // depth runs along the facing direction, width across it
+      if (Math.abs(dx * c + dy * sn) <= f.d / 2 && Math.abs(-dx * sn + dy * c) <= f.w / 2) return f;
+    }
+    return undefined;
+  }
+
+  // ---------------------------------------------------- outside the grid
+
+  /** Per outer vertex: the city-edge color it starts from, and how far out it is (for the blend). */
+  private outerBase = new Float32Array(0);
+
   private buildOuter(): void {
     const M = this.M, w = this.world, step = w.tile / RES;
-    const K = 5; // corner fan steps
-    const loop: { v: number; dx: number; dy: number; corner: boolean }[] = [];
+    const S = w.size * w.tile;
+    // corner fans: fine enough that far out (2 km from the corner) the steps are still ~30 m apart
+    const K = 96;
+    const loop: { v: number; dx: number; dy: number; corner: number }[] = [];
     const corner = (i: number, j: number, a0: number) => {
       for (let k = 0; k <= K; k++) {
         const a = a0 + (k / K) * (Math.PI / 2);
-        loop.push({ v: j * M + i, dx: Math.cos(a), dy: Math.sin(a), corner: true });
+        loop.push({ v: j * M + i, dx: Math.cos(a), dy: Math.sin(a), corner: k === 0 || k === K ? -1 : k });
       }
     };
     corner(0, 0, Math.PI);
-    for (let i = 1; i < M - 1; i++) loop.push({ v: i, dx: 0, dy: -1, corner: false });
+    for (let i = 1; i < M - 1; i++) loop.push({ v: i, dx: 0, dy: -1, corner: 0 });
     corner(M - 1, 0, -Math.PI / 2);
-    for (let j = 1; j < M - 1; j++) loop.push({ v: j * M + M - 1, dx: 1, dy: 0, corner: false });
+    for (let j = 1; j < M - 1; j++) loop.push({ v: j * M + M - 1, dx: 1, dy: 0, corner: 0 });
     corner(M - 1, M - 1, 0);
-    for (let i = M - 2; i >= 1; i--) loop.push({ v: (M - 1) * M + i, dx: 0, dy: 1, corner: false });
+    for (let i = M - 2; i >= 1; i--) loop.push({ v: (M - 1) * M + i, dx: 0, dy: 1, corner: 0 });
     corner(0, M - 1, Math.PI / 2);
-    for (let j = M - 2; j >= 1; j--) loop.push({ v: j * M, dx: -1, dy: 0, corner: false });
+    for (let j = M - 2; j >= 1; j--) loop.push({ v: j * M, dx: -1, dy: 0, corner: 0 });
 
-    const D = [0, 18, 50, 120, 260, 520, 1000, 1800, 3000, 4800];
+    // rings out from the city's edge: fine across the countryside (to the map's edge), then a few to the horizon
+    const reach = Math.max(MAP.max - S, -MAP.min);
+    const D: number[] = [0, 5, 10, 16, 24, 32, 42, 54, 68, 84, 100];
+    for (let d = 120; d < reach + 60; d += 20) D.push(d);
+    D.push(reach + 60, reach + 300, reach + 800, reach + 1600, reach + 2800, reach + 4500);
     const L = loop.length, R = D.length;
-    // a blurred copy of the border (height and color): the outer land continues
-    // its general look, not every tree and rock on the edge (which would streak)
+    // a blurred copy of the border (height and color): the land carries on the city edge's general look, not every tree and rock on it
     const W = 14;
-    const sh = new Float32Array(L), sc = new Float32Array(L * 3);
+    const sc = new Float32Array(L * 3);
     for (let e = 0; e < L; e++) {
-      let h = 0, r = 0, g = 0, b = 0;
+      let r = 0, g = 0, b = 0;
       for (let k = -W; k <= W; k++) {
         const v = loop[(e + k + L) % L].v;
-        h += this.hv[v]; r += this.col[v * 4]; g += this.col[v * 4 + 1]; b += this.col[v * 4 + 2];
+        r += this.col[v * 4]; g += this.col[v * 4 + 1]; b += this.col[v * 4 + 2];
       }
       const f = 1 / (2 * W + 1);
-      sh[e] = h * f; sc[e * 3] = r * f; sc[e * 3 + 1] = g * f; sc[e * 3 + 2] = b * f;
+      sc[e * 3] = r * f; sc[e * 3 + 1] = g * f; sc[e * 3 + 2] = b * f;
     }
-    // each ring keeps fewer loop entries the farther out it is (corners always),
-    // so triangles stay roughly square instead of long radial slivers
+    // each ring keeps the loop entries that space its vertices ~5 m near the city, ~20 m across the fields, coarser on the horizon
     const rings: number[][] = [];
     for (let r = 0; r < R; r++) {
-      const stride = r <= 1 ? 1 : Math.min(64, 1 << (r - 1));
-      rings.push(loop.map((_, e) => e).filter((e) => e % stride === 0 || loop[e].corner));
+      const d = D[r];
+      const stride = d < 60 ? 1 : d < 300 ? 2 : d < reach + 100 ? 4 : Math.min(64, 8 << Math.min(3, Math.floor((d - reach) / 900)));
+      const arc = ((Math.PI / 2) * Math.max(1, d)) / K; // metres between corner steps at this distance
+      const cs = Math.max(1, Math.min(32, Math.round((stride * 5) / arc)));
+      rings.push(loop.map((_, e) => e).filter((e) => {
+        const c = loop[e].corner;
+        return c === -1 || (c === 0 ? e % stride === 0 : c % cs === 0);
+      }));
     }
     const total = rings.reduce((a2, ring) => a2 + ring.length, 0);
     const pos = new Float32Array(total * 3);
-    const cols = new Float32Array(total * 4);
-    const base: number[] = [];
-    const s = this.seed;
+    const base = new Float32Array(total * 4);
+    const ringStart: number[] = [];
     let vi = 0;
     for (let r = 0; r < R; r++) {
-      base.push(vi);
+      ringStart.push(vi);
       const d = D[r];
       for (const e of rings[r]) {
         const { v, dx, dy } = loop[e];
         const bx = (v % M) * step, by = Math.floor(v / M) * step;
         const x = bx + dx * d, y = by + dy * d;
-        const ground = 1.2 + 3.5 * fbm(x / 200, y / 200, s + 61, 3);
-        const hills = 120 * Math.max(0, fbm(x / 1100, y / 1100, s + 62, 3) - 0.38) * smoothstep(200, 2200, d);
-        const h0 = r === 0 ? this.hv[v] : sh[e];
-        const blend = smoothstep(0, 160, d), cblend = smoothstep(0, 110, d);
         pos[vi * 3] = x;
-        pos[vi * 3 + 1] = h0 + (ground + hills - h0) * blend;
+        pos[vi * 3 + 1] = r === 0 ? this.hv[v] : heightAt(w, x, y);
         pos[vi * 3 + 2] = y;
-        const c: RGB = [PAL.outer[0], PAL.outer[1], PAL.outer[2]];
-        mix(c, PAL.outerDark, smoothstep(0.4, 0.65, fbm(x / 260, y / 260, s + 63, 3)));
-        const b0 = r === 0 ? this.col[v * 4] : sc[e * 3], b1 = r === 0 ? this.col[v * 4 + 1] : sc[e * 3 + 1], b2 = r === 0 ? this.col[v * 4 + 2] : sc[e * 3 + 2];
-        cols[vi * 4] = b0 + (c[0] - b0) * cblend;
-        cols[vi * 4 + 1] = b1 + (c[1] - b1) * cblend;
-        cols[vi * 4 + 2] = b2 + (c[2] - b2) * cblend;
-        cols[vi * 4 + 3] = 1;
+        base[vi * 4] = r === 0 ? this.col[v * 4] : sc[e * 3];
+        base[vi * 4 + 1] = r === 0 ? this.col[v * 4 + 1] : sc[e * 3 + 1];
+        base[vi * 4 + 2] = r === 0 ? this.col[v * 4 + 2] : sc[e * 3 + 2];
+        base[vi * 4 + 3] = d;
         vi++;
       }
     }
+    this.outerBase = base;
     const idx: number[] = [];
     const up = (a: number, b: number, c: number) => {
       const area = (pos[b * 3] - pos[a * 3]) * (pos[c * 3 + 2] - pos[a * 3 + 2]) - (pos[b * 3 + 2] - pos[a * 3 + 2]) * (pos[c * 3] - pos[a * 3]);
@@ -630,7 +693,7 @@ export class TerrainRenderer {
       const A = rings[r], B = rings[r + 1], na = A.length, nb = B.length;
       const ea = (i: number) => (i < na ? A[i] : A[i - na] + L);
       const eb = (j: number) => (j < nb ? B[j] : B[j - nb] + L);
-      const va = (i: number) => base[r] + (i % na), vb = (j: number) => base[r + 1] + (j % nb);
+      const va = (i: number) => ringStart[r] + (i % na), vb = (j: number) => ringStart[r + 1] + (j % nb);
       let i = 0, j = 0;
       while (i < na || j < nb) {
         if (i < na && (j >= nb || ea(i + 1) <= eb(j + 1))) { up(va(i), va(i + 1), vb(j)); i++; }
@@ -649,14 +712,53 @@ export class TerrainRenderer {
     vd.positions = pos;
     vd.indices = idx;
     vd.normals = nrm;
-    vd.colors = cols;
+    vd.colors = this.colorOuter(pos, base, false);
     const m = new Mesh('outerGround', this.scene);
-    vd.applyToMesh(m, false);
+    vd.applyToMesh(m, true);
     m.material = this.outerMat;
-    m.isPickable = false;
+    m.isPickable = true;
+    m.metadata = { kind: 'terrain' };
     m.receiveShadows = true;
     m.freezeWorldMatrix();
     this.outer = m;
+  }
+
+  /**
+   * Colors of the land beyond the city: meadow and woods, and the fields by
+   * what's grown on them (golden grain, dark vegetable rows, green pasture),
+   * blending from the city's edge.
+   */
+  private colorOuter(pos: Float32Array, base: Float32Array, apply: boolean): Float32Array {
+    const w = this.world, s = this.seed;
+    const n = pos.length / 3;
+    const cols = new Float32Array(n * 4);
+    const c: RGB = [0, 0, 0];
+    for (let vi = 0; vi < n; vi++) {
+      const x = pos[vi * 3], y = pos[vi * 3 + 2], d = base[vi * 4 + 3];
+      c[0] = PAL.outer[0]; c[1] = PAL.outer[1]; c[2] = PAL.outer[2];
+      mix(c, PAL.outerDark, smoothstep(0.4, 0.65, fbm(x / 260, y / 260, s + 63, 3)));
+      if (onLand(x, y)) {
+        const k = kindAt(w, x, y);
+        if (k === 'forest') mix(c, PAL.forest, 0.85);
+        else if (k === 'rock') mix(c, PAL.rock, 0.8);
+        else {
+          const f = this.fieldAt(x, y);
+          if (f) {
+            const tint = FIELD[f.kind] ?? FIELD.fallow;
+            const pick = tint[f.look % tint.length];
+            // a little texture within a field (wetter and drier patches)
+            mix(c, pick, 0.82 + 0.12 * fbm(x / 40, y / 40, s + 64, 2));
+          }
+        }
+      }
+      const cb = smoothstep(0, 110, d);
+      cols[vi * 4] = base[vi * 4] + (c[0] - base[vi * 4]) * cb;
+      cols[vi * 4 + 1] = base[vi * 4 + 1] + (c[1] - base[vi * 4 + 1]) * cb;
+      cols[vi * 4 + 2] = base[vi * 4 + 2] + (c[2] - base[vi * 4 + 2]) * cb;
+      cols[vi * 4 + 3] = 1;
+    }
+    if (apply && this.outer) this.outer.updateVerticesData(VertexBuffer.ColorKind, cols);
+    return cols;
   }
 
   private buildWater(): void {

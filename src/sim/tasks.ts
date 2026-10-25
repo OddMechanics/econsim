@@ -4,7 +4,7 @@
 // (Shifts at work are in production.ts.)
 
 import { CARRY_CAPACITY, MOVE, OUTSIDE } from './config';
-import { addCash, cashOf, hourOf, log, pay, type Ctx } from './ctx';
+import { addCash, cashOf, cityPop, hourOf, log, pay, type Ctx } from './ctx';
 import { BUILDINGS, chooseFloors, DURABLES, EDIBLE, foodIn, GOOD, invWeight, ROLE, takeFood } from './goods';
 import { buildMinute, checkFinished, createBuilding, deliveredFraction, findLot } from './buildings';
 import { doorOf, stationsOf, toWorld, worldHeading } from './layout';
@@ -623,7 +623,7 @@ function execute(ctx: Ctx, p: Person, step: Step): StepResult {
         if (BUILDINGS[step.kind].leasable === 'suite') noteOfficeWanted(ctx);
         return 'instant';
       }
-      let floors = step.floors ?? chooseFloors(step.kind, lot.zone, s.people.length, ctx.rng.next());
+      let floors = step.floors ?? chooseFloors(step.kind, lot.zone, cityPop(ctx), ctx.rng.next());
       const cap = maxFloorsAt(ctx, lot.x, lot.y);
       if (cap > 0) floors = Math.max(DEFS[step.kind].floors[0], Math.min(floors, cap));
       // the land and some working capital now; the building is paid as it goes up (with a construction loan)

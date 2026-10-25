@@ -1,7 +1,7 @@
 import { cashOf, log, nameOf, newId, pay, type Ctx } from './ctx';
 import { BUILDINGS, emptyInv, invTotal, materialsFor, TOWERS, unitsFor, workHoursFor } from './goods';
 import { toWorld } from './layout';
-import { heightAt } from './world';
+import { fertilityAt, heightAt } from './world';
 import { lotsForSale, markLotUsed } from './roads';
 import { noteLandDemand, noteLandSale } from './government';
 import type { Building, BuildingKind, Lot, Person, Unit, Zone } from './types';
@@ -146,14 +146,11 @@ export function lotPrice(lot: Lot, buyer: number): number {
 
 function lotFertility(ctx: Ctx, l: Lot): number {
   const w = ctx.s.world;
-  let f = 0, n = 0;
-  for (const [dx, dy] of [[0, 0], [12, 12], [-12, 12], [12, -12], [-12, -12]]) {
-    const tx = Math.floor((l.x + dx) / w.tile), ty = Math.floor((l.y + dy) / w.tile);
-    if (tx < 0 || ty < 0 || tx >= w.size || ty >= w.size) continue;
-    f += w.fertility[ty * w.size + tx];
-    n++;
-  }
-  return n ? f / n : 0;
+  // the middle and four points toward the corners (a big field is sampled across its whole area)
+  const r = Math.max(12, Math.min(l.w, l.d) * 0.3);
+  let f = 0;
+  for (const [dx, dy] of [[0, 0], [r, r], [-r, r], [r, -r], [-r, -r]]) f += fertilityAt(w, l.x + dx, l.y + dy);
+  return f / 5;
 }
 
 export function farmFertility(ctx: Ctx, b: Building): number {

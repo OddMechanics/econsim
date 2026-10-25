@@ -4,7 +4,8 @@
 // TV windows. Everything is plain DOM strings rebuilt a few times a second
 // from the simulation state.
 
-import { dayOf, dayStart, formatTime, minuteOfDay, nameOf } from '../sim/ctx';
+import { cityPop, dayOf, dayStart, formatTime, minuteOfDay, nameOf } from '../sim/ctx';
+import { isRural } from '../sim/countryside';
 import { MINUTES_PER_DAY, OUTSIDE } from '../sim/config';
 import { BUILDINGS, comfortOf, GOOD, invWeight, RETAIL_GOODS, ROLE, slotsFor, TOWERS } from '../sim/goods';
 import { deliveredFraction, hostedOf } from '../sim/buildings';
@@ -523,7 +524,7 @@ export class UI {
     const spend = (f: Firm) => Object.values(f.adSpend ?? {}).reduce((a, b) => a + (b ?? 0), 0);
     const top = s.firms.filter((f) => !f.closed && spend(f) > 0).sort((a, b) => spend(b) - spend(a)).slice(0, 3);
     const tiles: [string, string, string?][] = [
-      ['People', String(s.people.length)],
+      ['People', String(s.people.length), `${cityPop(ctx)} city · ${s.people.length - cityPop(ctx)} country`],
       ['Employed', String(s.contracts.length)],
       ['Companies', String(s.firms.filter((f) => !f.closed && f.gov === undefined).length)],
       ['Open jobs / out of work', `${s.postings.length} / ${pct(s.people.length ? jobless / s.people.length : 0)}`],
@@ -853,6 +854,7 @@ export class UI {
           <span class="k">Job</span><span>${jobText}</span>
           ${gigText ? `<span class="k">Gig work</span><span>${gigText}</span>` : ''}
           <span class="k">Home</span><span>${homeText}</span>
+          ${isRural(ctx, p) ? '<span class="k">Life</span><span>🌾 countryside: a simpler routine (the farm or job, meals at home, the village shop and pub), a handful of places they know</span>' : ''}
           ${property.length ? `<span class="k">Property</span><span>${property.slice(0, 6).map((b) => this.bldLink(b, `${b.floors > 2 ? `${b.floors}-floor ` : ''}${BUILDINGS[b.kind].label.toLowerCase()}`)).join(', ')}${property.length > 6 ? ` +${property.length - 6}` : ''}</span>` : ''}
           <span class="k">Who</span><span>${Math.floor(ageOf(ctx, p))} years old · ${p.edu} years of school · grew up in ${esc(p.origin)}</span>
           <span class="k">Happiness</span><span>${pct(p.happy)}</span>

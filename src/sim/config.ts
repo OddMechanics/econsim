@@ -12,6 +12,29 @@ export const WORLD = {
   maxHeight: 10,
 };
 
+/**
+ * The whole map: 6 x 6 km. The city's detailed ground (WORLD: stored tiles)
+ * is the 2 x 2 km square in the middle, 0..2000 m; around it is countryside
+ * (farms, villages, woods) whose ground is computed from formulas instead of
+ * stored (see world.ts heightAt / kindAt / fertilityAt).
+ */
+export const MAP = { min: -2000, max: 4000 };
+
+/** The countryside around the city (laid out once when the world begins, see countryside.ts). */
+export const COUNTRY = {
+  laneSpacing: 1000, // between country lanes (m)
+  fieldFrontage: [170, 300] as [number, number], // a farm's fields along the lane (m)
+  fieldDepth: [220, 400] as [number, number],
+  farmShare: 0.3, // of the farm lots that start out farmed (the rest are for sale)
+  villages: 3,
+  villageHouses: 16,
+  kinds: { farm: 0.42, vegfarm: 0.22, dairyfarm: 0.2, ranch: 0.16 } as Record<string, number>,
+  /** Countryside people are updated this many times less often while doing something steady. */
+  stride: 3,
+  /** Days out of work before a countryside person moves to the city. */
+  joblessDays: 10,
+};
+
 export const ROAD = {
   avenue: 11, // asphalt width (m)
   street: 7.5,
@@ -119,7 +142,8 @@ export const OUTSIDE = {
   exportShare: 0.85,
   // the region buys what the city makes (its export base); manufactured goods sell best
   // (to the wider world a small city is a price-taker: it can sell about as much as it can make)
-  buy: { crops: 800, produce: 700, milk: 700, livestock: 400, bread: 800, dairy: 900, meat: 900, wood: 600, stone: 600, clay: 300, ore: 500, groceries: 1500, planks: 1500, bricks: 1500, steel: 1000, concrete: 1500, glass: 1000, tools: 600, furniture: 600, clothes: 1000, computers: 500, cars: 100 } as Record<string, number>,
+  // (farm goods: the region's food wholesalers buy what the countryside around the city grows)
+  buy: { crops: 2500, produce: 1500, milk: 1500, livestock: 600, bread: 800, dairy: 900, meat: 900, wood: 600, stone: 600, clay: 300, ore: 500, groceries: 1500, planks: 1500, bricks: 1500, steel: 1000, concrete: 1500, glass: 1000, tools: 600, furniture: 600, clothes: 1000, computers: 500, cars: 100 } as Record<string, number>,
   /** Outside suppliers' capacity per good per day (practically unlimited for a city this size). */
   supply: 4000,
   /** Hours from order to an outside truck setting off (orders placed in the afternoon come next morning). */
@@ -200,6 +224,8 @@ export const POLITICS = {
 /** The Territory sells land outside every government's claim (frontier prices, money leaves). */
 export const LAND = {
   territoryPrice: { rural: 18, suburb: 25, urban: 40, core: 60, industrial: 30 } as Record<string, number>,
+  /** The Territory sells big parcels (farm fields) by the square metre, at least the price above. */
+  territoryPerM2: 0.004,
   auctionHours: 20,
   /**
    * Assessed value per square meter of lot by zone (times 0.5 + population/150, and demand): downtown land

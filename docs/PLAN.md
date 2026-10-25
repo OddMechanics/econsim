@@ -265,6 +265,24 @@ What's new:
     - **The cost of a day's living** now uses a mixed basket.
     - **Old saves** get the new goods added on load.
 
+107. **The countryside** (you said "yes exactly what you were thinking… you have all these farms", and that its people should be simpler programs rather than extra people):
+    - **The map is now 6 × 6 km.** The city's detailed ground (stored tiles) is the 2 × 2 km square in the middle. Around it, 2 km of countryside is computed from formulas: rolling farmland, woodlots, and the city edge's woods and rocks thinning out over the first ~350 m.
+    - **Roads:** Route 9 carries on to the map's edge, going around lakes. Outside trucks come and go there; newcomers are still dropped off at the edge of town. Country lanes run about 1 km apart, with bends and a few gaps. They join the highway and wait at the ends of the city's planned country roads.
+    - **Farms:** along every lane, a farmhouse lot (38 × 44 m) next to a field lot (170–300 m wide × 220–400 m deep). About 30% start farmed (grain 42%, vegetables 22%, dairy 20%, livestock 16%, by soil); the rest is the Territory's, for sale by area (0.004 per m²). Field fertility comes from the soil formula.
+    - **Farm families:** the farmer owns the farmhouse (4 rooms) and the farm. One or two relatives work with them and live in it rent-free. A farm worker who lives rough or far away moves into the farmhouse if there's room. Open farm jobs with room in the farmhouse draw someone from outside (25% a day per opening).
+    - **Villages:** 3, at crossroads far apart, each with two short streets, a shop, a pub and about 16 houses. A quarter of the villagers are retired; the rest work on nearby farms.
+    - **Countryside people are a simpler program:**
+      - Their choices: sleep, work or their farm, eat at home, the village shop, the pub, TV, a walk, voting.
+      - They skip: business plans, moving house, gig work, the Net at home, learned habits.
+      - They look round every 3 days instead of daily, knowing the nearest 2 shops, 1 pub and 3 hiring farms within 1.5 km.
+      - They're updated 3× less often while doing something steady.
+      - Vegetable farmers eat their own produce.
+      - After 10 days out of work (unless well off), they leave for the city and become city people.
+    - **Who counts as countryside:** anyone whose home is outside the city's square. The population cap (10,000) and everything sized by "the city's population" (zones, building heights, chains, export and service demand) count only city residents.
+    - **Food exports:** the region's wholesalers buy more farm goods: grain 2,500, vegetables 1,500, milk 1,500, livestock 600 a day (they were 800/700/700/400).
+    - **Highway fix:** Route 9 used to stop at the first lake. In some worlds that meant no highway at all.
+    - **3D:** the ground out to the map's edge uses the same height formula. Fields are colored by crop; the farm model draws its rows over the whole field. Countryside woods have no trees yet.
+
 Your rule for this (2026-10-24): nobody is forced to build a tower. Towers should come from people's and companies' own decisions in an urban economy; skyscrapers were never the goal in themselves.
 
 ### What a run looks like now (headless, final code apart from #93, 2026-10-24)

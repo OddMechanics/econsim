@@ -4,7 +4,7 @@
 // corporation with an office building when it does well.
 
 import { JOBS, OUTSIDE } from './config';
-import { addCash, cashOf, controllerOf, log, newId, type Ctx } from './ctx';
+import { addCash, cashOf, cityPop, controllerOf, log, newId, type Ctx } from './ctx';
 import { BUILDINGS, chooseFloors, EDIBLE, materialsFor, RETAIL_GOODS, slotsFor, workHoursFor } from './goods';
 import { createBuilding, farmFertility, findLot, transferBuilding } from './buildings';
 import { hire, layOff, offerWage, postJob, staffAt } from './jobs';
@@ -62,6 +62,23 @@ export function foundFirm(ctx: Ctx, founder: Person, kind: BuildingKind, lot: Lo
   const site = createBuilding(ctx, kind, lot, f.id, floors, false, f.id);
   startConstruction(ctx, f.id, site);
   log(ctx, 'business', `${founder.name} founded ${f.name} (${BUILDINGS[kind].label.toLowerCase()}) with ${invest.toFixed(0)} of savings.`, { who: founder.id, firm: f.id, bid: site.id });
+  return f;
+}
+
+/** A business that is already up and running when the world begins (the countryside's farms, village shops and pubs). */
+export function establishFirm(ctx: Ctx, owner: Person, kind: BuildingKind, lot: Lot, cash: number): Firm {
+  const last = owner.name.split(' ')[1] ?? owner.name;
+  const f: Firm = {
+    id: newId(ctx), name: firmName(ctx.rng, kind, last), owner: owner.id, founded: ctx.s.tick, cash, kind,
+    sites: [], prices: {}, wages: {}, ledger: { revenue: 0, costs: 0, days: [] }, reputation: 0.55,
+    sales: {}, salesAvg: {}, losing: 0, hue: ctx.rng.next(), website: false, slogan: slogan(ctx.rng), closed: false,
+  };
+  ctx.s.firms.push(f);
+  ctx.fById.set(f.id, f);
+  owner.firms.push(f.id);
+  initPrices(f, owner);
+  lot.forSale = 0;
+  createBuilding(ctx, kind, lot, f.id, 1, true, f.id);
   return f;
 }
 
@@ -137,7 +154,7 @@ const CHAINS: { brand: string; kind: BuildingKind; per: number; minPop: number; 
  * from their own warehouses outside.
  */
 export function chainsDaily(ctx: Ctx): void {
-  const pop = ctx.s.people.length;
+  const pop = cityPop(ctx);
   for (const c of CHAINS) {
     if (pop < c.minPop || !ctx.rng.chance(0.25)) continue;
     const have = ctx.s.buildings.filter((b) => b.kind === c.kind && !b.ruined).length;
@@ -647,7 +664,7 @@ function maybeExpand(ctx: Ctx, f: Firm, owner: Person): void {
   if (suite && leaseUnit(ctx, f, suite, 'office')) return;
   if (employees >= 12 && !sites.some((s) => s.kind === 'office') && builders) {
     // bigger cities, taller towers (and downtown land is precious)
-    const floors = Math.min(4 + Math.floor(ctx.s.people.length / 40), 2 + Math.floor(employees / 6));
+    const floors = Math.min(4 + Math.floor(cityPop(ctx) / 40), 2 + Math.floor(employees / 6));
     const cost = buildCost(ctx, owner, 'office', floors);
     if (f.cash > cost * 1.3) {
       const lot = findLot(ctx, 'office', null, f.id);
@@ -702,7 +719,7 @@ function diversify(ctx: Ctx, f: Firm, owner: Person, avg: number, builders: bool
   if (f.cash <= cost * 1.1) return false;
   const lot = findLot(ctx, kind, null, f.id);
   if (!lot) return false;
-  const b = createBuilding(ctx, kind, lot, f.id, chooseFloors(kind, lot.zone, ctx.s.people.length, ctx.rng.next()), false, f.id);
+  const b = createBuilding(ctx, kind, lot, f.id, chooseFloors(kind, lot.zone, cityPop(ctx), ctx.rng.next()), false, f.id);
   startConstruction(ctx, f.id, b);
   log(ctx, 'business', `${f.name} is branching out: building a ${BUILDINGS[kind].label.toLowerCase()}.`, { firm: f.id, bid: b.id });
   return true;
@@ -724,7 +741,7 @@ function expand(ctx: Ctx, f: Firm, owner: Person, avg: number, builders: boolean
   if (f.cash <= cost * 1.4 + BUILDINGS[kind].minFunds) return false;
   const lot = findLot(ctx, kind, null, f.id);
   if (!lot) return false;
-  const b = createBuilding(ctx, kind, lot, f.id, chooseFloors(kind, lot.zone, ctx.s.people.length, ctx.rng.next()), false, f.id);
+  const b = createBuilding(ctx, kind, lot, f.id, chooseFloors(kind, lot.zone, cityPop(ctx), ctx.rng.next()), false, f.id);
   startConstruction(ctx, f.id, b);
   log(ctx, 'business', `${f.name} is expanding: a new ${BUILDINGS[kind].label.toLowerCase()} is going up.`, { firm: f.id, bid: b.id });
   return true;
@@ -742,7 +759,7 @@ function bestOpportunity(ctx: Ctx, f: Firm): BuildingKind | null {
     let supply = 0;
     for (const o of ctx.s.market.orders) if (o.side === 'ask' && o.good === g) supply += o.qty;
     const makers = ctx.s.buildings.filter((b) => b.kind === kind && !b.ruined).length;
-    if (makers >= 2 + ctx.s.people.length / 50) continue;
+    if (makers >= 2 + cityPop(ctx) / 50) continue;
     const score = wantValue - makers * 60 - supply * (ctx.s.market.last[g] || 1);
     if (score > bestScore) { bestScore = score; best = kind; }
   }

@@ -1,5 +1,5 @@
 import { MINUTES_PER_DAY, NEEDS, OUTSIDE, POPULATION, WAGES } from './config';
-import { isNight, log, newId, type Ctx } from './ctx';
+import { cityPop, isNight, log, newId, type Ctx } from './ctx';
 import { BUILDINGS, DURABLES, EDIBLE, emptyInv, GOOD } from './goods';
 import { randomName } from './names';
 import { nearestRoadPoint } from './roads';
@@ -204,7 +204,7 @@ export function spawnNewcomer(ctx: Ctx): Person | null {
   y += ctx.rng.range(-3, 3);
   const [lo, hi] = POPULATION.newcomerMoney;
   // most come with little; about one in ten brings real savings (to invest, start a business, or a profession)
-  const investor = ctx.rng.chance(0.1 + Math.min(0.1, ctx.s.people.length / 3000));
+  const investor = ctx.rng.chance(0.1 + Math.min(0.1, cityPop(ctx) / 3000));
   const money = investor ? Math.round(800 + 2600 * Math.pow(ctx.rng.next(), 2)) : Math.round(lo + (hi - lo) * Math.pow(ctx.rng.next(), 2));
   const p = createPerson(ctx, x, y, money, POPULATION.newcomerFood);
   if (investor) {
