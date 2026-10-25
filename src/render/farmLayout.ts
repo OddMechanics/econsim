@@ -29,11 +29,34 @@ export function yardRect(bw: number, bd: number, lotD: number, lotZ: number): { 
 
 /**
  * Is a building's lot ground drawn by the field renderer (laid on the
- * unleveled countryside ground) instead of as a flat slab? Farms on field
- * lots and farmhouses, out in the countryside.
+ * unleveled countryside ground) instead of as a flat slab? Every building on
+ * a lot outside the city's grid (the sim only levels lots on the grid).
  */
-export function drapedLot(kind: BuildingKind, lotW: number, lotD: number, outside: boolean): boolean {
-  return outside && (kind === 'farmhouse' || (FARM_KINDS.has(kind) && isFieldLot(lotW, lotD)));
+export function drapedLot(_kind: BuildingKind, _lotW: number, _lotD: number, outside: boolean): boolean {
+  return outside;
+}
+
+/**
+ * Is a draped building also bent to meet the ground (settle.ts)? All but the
+ * standing farmyards and farmhouses, whose builders stand each piece on the
+ * ground themselves (farms.ts). `standing` = built and not a ruin.
+ */
+export function settledLot(kind: BuildingKind, lotW: number, lotD: number, outside: boolean, standing: boolean): boolean {
+  return outside && (!standing || (kind !== 'farmhouse' && !(FARM_KINDS.has(kind) && isFieldLot(lotW, lotD))));
+}
+
+/** The lot ground a building's builder asks for (lotGround in buildingCtx.ts), for laying it on the terrain. */
+export function lotGroundOf(kind: BuildingKind, built: boolean, ruined: boolean): 'lawn' | 'paved' | 'gravel' | 'dirt' | 'plaza' | 'clay' | 'meadow' {
+  if (ruined || !built) return 'dirt';
+  switch (kind) {
+    case 'house': case 'trailer': case 'park': case 'farmhouse': return 'lawn';
+    case 'yard': case 'sawmill': case 'brickworks': case 'cementworks': case 'steelmill': case 'workshop': case 'furniture': case 'mine': return 'gravel';
+    case 'quarry': case 'claypit': return 'clay';
+    case 'lumberyard': return 'dirt';
+    case 'plaza': return 'plaza';
+    case 'farm': case 'vegfarm': case 'dairyfarm': case 'ranch': return 'meadow';
+    default: return 'paved';
+  }
 }
 
 /** Where the farm's tractor stands, in the building's local frame (left of the building, facing the lane). */

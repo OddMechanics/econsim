@@ -628,6 +628,8 @@ export class PropList {
   /** Finished data (after `finish`). */
   data = new Map<PropName, { m: Float32Array; c: Float32Array }>();
   count = 0;
+  /** Extra height for an instance at a world point and local height (a building bent to meet unleveled ground, see settle.ts). */
+  adjust: ((wx: number, ly: number, wz: number) => number) | null = null;
   private cs: number;
   private sn: number;
 
@@ -643,7 +645,8 @@ export class PropList {
   /** Add one instance at local (x, y, z) + yaw `rot` relative to the current frame of `t`, scaled, tinted. */
   add(name: PropName, t: Xf, x: number, y: number, z: number, rot = 0, sx = 1, sy = 1, sz = 1, col?: Color3 | null): void {
     const lx = t.ox + x * t.cs + z * t.sn, lz = t.oz - x * t.sn + z * t.cs, ly = t.oy + y;
-    const wx = this.bx + lx * this.cs + lz * this.sn, wz = this.bz - lx * this.sn + lz * this.cs, wy = this.by + ly;
+    const wx = this.bx + lx * this.cs + lz * this.sn, wz = this.bz - lx * this.sn + lz * this.cs;
+    const wy = this.by + ly + (this.adjust ? this.adjust(wx, ly, wz) : 0);
     const a = t.a + rot + this.rot;
     const c = Math.cos(a), s = Math.sin(a);
     let d = this.raw.get(name);

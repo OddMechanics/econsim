@@ -32,12 +32,12 @@ import { fbm, heightAt, inGrid } from '../sim/world';
 import { ambulanceSpots } from './health';
 import { farmhouseDrive } from './farms';
 import { countryModels, modelMesh, type CountryModel } from './countryModels';
-import { FARM_KINDS, drapedLot, tractorSpot, yardRect } from './farmLayout';
+import { FARM_KINDS, drapedLot, isFieldLot, lotGroundOf, tractorSpot, yardRect } from './farmLayout';
 import { Buf, pushYaw } from './natureKit';
 import type { SurfaceIndex } from './terrain';
 
-type Look = 'wheat' | 'barley' | 'young' | 'stubble' | 'plowed' | 'veg' | 'vegDark' | 'pasture' | 'gravel' | 'dirt' | 'lawn';
-const LOOKS: Look[] = ['wheat', 'barley', 'young', 'stubble', 'plowed', 'veg', 'vegDark', 'pasture', 'gravel', 'dirt', 'lawn'];
+type Look = 'wheat' | 'barley' | 'young' | 'stubble' | 'plowed' | 'veg' | 'vegDark' | 'pasture' | 'gravel' | 'dirt' | 'lawn' | 'paving' | 'plaza' | 'clay' | 'meadow';
+const LOOKS: Look[] = ['wheat', 'barley', 'young', 'stubble', 'plowed', 'veg', 'vegDark', 'pasture', 'gravel', 'dirt', 'lawn', 'paving', 'plaza', 'clay', 'meadow'];
 
 interface LookDef {
   /** Texture tile size (m) across and along the rows. */
@@ -59,6 +59,10 @@ const LOOK: Record<Look, LookDef> = {
   gravel: { tile: 10, height: 0, edge: '' },
   dirt: { tile: 10, height: 0, edge: '' },
   lawn: { tile: 12, height: 0, edge: '' },
+  paving: { tile: 8, height: 0, edge: '' },
+  plaza: { tile: 8, height: 0, edge: '' },
+  clay: { tile: 10, height: 0, edge: '' },
+  meadow: { tile: 16, height: 0, edge: '' },
 };
 
 /** Flat fields sit this high above the ground (plus a depth offset). */
@@ -270,6 +274,25 @@ function lookTexture(scene: Scene, look: Look): Texture {
         g.globalAlpha = 1;
         speckle(g, S, rnd, 4000, ['#5f8c3e', '#7aa852', '#689545', '#82ae58'], 2, 2, 0.45);
         break;
+      case 'paving':
+      case 'plaza': {
+        // concrete slabs (or the plaza's light stone), a joint every 2 m
+        fill(look === 'paving' ? '#bdb8ae' : '#d9cdb8');
+        speckle(g, S, rnd, 3000, look === 'paving' ? ['#b2ada3', '#c6c1b7', '#aaa59b'] : ['#cfc3ae', '#e2d7c3', '#d2c6b1'], 2, 2, 0.4);
+        g.globalAlpha = 0.35;
+        g.fillStyle = look === 'paving' ? '#9c978d' : '#b8ac96';
+        for (let x = 0; x < S; x += 2 * ppm) { g.fillRect(x, 0, 1, S); g.fillRect(0, x, S, 1); }
+        g.globalAlpha = 1;
+        break;
+      }
+      case 'clay':
+        fill('#b49a78');
+        speckle(g, S, rnd, 4000, ['#a68c6a', '#c2a886', '#9c8262', '#bfa07c'], 3, 3, 0.45);
+        break;
+      case 'meadow':
+        fill('#7a9a50');
+        speckle(g, S, rnd, 4000, ['#6c8c45', '#88a85c', '#728f4a', '#93ad62'], 2, 3, 0.45);
+        break;
       case 'pasture':
         fill('#68a043');
         for (let i = 0; i < 260; i++) {
@@ -361,10 +384,12 @@ export class FieldRenderer {
     this.syncAmbulances(buildings, world);
     const list: Farm[] = [];
     for (const b of buildings) {
-      if (b.kind !== 'farmhouse' && !FARM_KINDS.has(b.kind)) continue;
+      if (b.host !== undefined && b.host >= 0) continue; // (part of a tower)
       const lot = lotById.get(b.lot);
       if (!lot || !drapedLot(b.kind, lot.w, lot.d, !inGrid(world, lot.x, lot.y))) continue;
-      list.push(b.kind === 'farmhouse' ? this.houseOf(b, lot) : this.farmOf(b, lot, this.lookOf(b, lot)));
+      if (FARM_KINDS.has(b.kind) && isFieldLot(lot.w, lot.d)) list.push(this.farmOf(b, lot, this.lookOf(b, lot)));
+      else if (b.kind === 'farmhouse' && b.built && !b.ruined) list.push(this.houseOf(b, lot));
+      else list.push(this.plainOf(b, lot));
     }
     const key = list.map((f) => f.key).join(';');
     if (key === this.key && surface === this.surface) return;
@@ -477,6 +502,28 @@ export class FieldRenderer {
     };
   }
 
+  /**
+   * Any other building out in the countryside: its lot's ground (lawn, paving, gravel... as its builder
+   * would draw it) laid on the terrain, around the building (whose walls reach down to it, settle.ts).
+   */
+  private plainOf(b: Building, lot: Lot): Farm {
+    const fx = Math.cos(lot.angle), fy = Math.sin(lot.angle), rx = Math.sin(lot.angle), ry = -Math.cos(lot.angle);
+    const ub = (b.x - lot.x) * fx + (b.y - lot.y) * fy, vb = (b.x - lot.x) * rx + (b.y - lot.y) * ry;
+    const look = lotGroundOf(b.kind, b.built, b.ruined);
+    const yardLook: Look = look === 'paved' ? 'paving' : look;
+    // (the ground runs half a metre in under the walls)
+    const hole: Rect = [ub - b.d / 2 + 0.5, ub + b.d / 2 - 0.5, vb - b.w / 2 + 0.5, vb + b.w / 2 - 0.5];
+    // (the builder draws its yard symmetric around the building, only as deep as the lot in front of it:
+    // buildings.ts keeps it inside the real lot; the ground covers the same part)
+    const u1 = lot.d / 2 - 0.3, u0 = Math.max(-lot.d / 2 + 0.3, Math.min(ub - b.d / 2 - 0.5, 2 * ub - u1));
+    const yardRects = subtract([[u0, u1, -lot.w / 2 + 0.3, lot.w / 2 - 0.3]], hole);
+    return {
+      key: `p${lot.id}:${b.id}:${yardLook}:${Math.round(b.x)},${Math.round(b.y)},${b.w},${b.d}`, lot, b, look: yardLook,
+      lx: lot.x, ly: lot.y, fx, fy, rects: [], yard: [0, 0, 0, 0], yardRects, yardLook, driveRects: [],
+      cx: lot.x, cy: lot.y, radius: Math.hypot(lot.w, lot.d) / 2,
+    };
+  }
+
   /** A farmhouse out in the countryside: its lot is lawn (around the house). */
   private houseOf(b: Building, lot: Lot): Farm {
     const fx = Math.cos(lot.angle), fy = Math.sin(lot.angle), rx = Math.sin(lot.angle), ry = -Math.cos(lot.angle);
@@ -513,7 +560,7 @@ export class FieldRenderer {
         if (!dg) { dg = new DecalGeo(); tops.set('gravel', dg); }
         for (const r of f.driveRects) this.decal(f, 'gravel', r, dg, edges, c);
       }
-      if (f.b.kind !== 'farmhouse') this.extras(f);
+      if (!f.key.startsWith('p') && !f.key.startsWith('h')) this.extras(f); // (a farm: its fence, herd, hedges, tractor)
     }
     for (const [look, g] of tops) {
       if (g.empty) continue;

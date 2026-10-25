@@ -34,6 +34,8 @@ export interface BuildingLook {
   draped?: boolean;
   /** Height of the drawn ground at a world point (sim x, y), for things standing around on unleveled ground. */
   terrain?: (x: number, y: number) => number;
+  /** Bend the building to meet the unleveled ground under it (settle.ts). */
+  settle?: boolean;
 }
 
 /** A unit inside a tower (a shop on the ground floor, a leased office floor), in the tower's local frame. */

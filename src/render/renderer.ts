@@ -25,7 +25,8 @@ import { ROAD_SURFACE, RoadRenderer } from './roads';
 import { TerrainRenderer } from './terrain';
 import { CountryNature } from './countryNature';
 import { FieldRenderer } from './fields';
-import { drapedLot } from './farmLayout';
+import { drapedLot, settledLot } from './farmLayout';
+import { SETTLE_LIFT, settleWeight } from './settle';
 import { VehicleRenderer, type VehicleVisual } from './vehicles';
 import { CameraController, type CameraMode, type Subject } from './camera';
 
@@ -266,11 +267,13 @@ export class WorldRenderer {
     const name = b.kind === 'cityhall' && gov ? gov.name
       : firm?.channel ? firm.channel.name : firm?.site ? firm.site.name : firm?.name;
     const lotZ = lot ? (lot.x - b.x) * Math.cos(b.angle) + (lot.y - b.y) * Math.sin(b.angle) : 0;
-    const draped = !!lot && drapedLot(b.kind, lot.w, lot.d, !inGrid(this.sim.state.world, lot.x, lot.y));
+    const outside = !!lot && !inGrid(this.sim.state.world, lot.x, lot.y);
+    const draped = !!lot && drapedLot(b.kind, lot.w, lot.d, outside);
+    const settle = !!lot && settledLot(b.kind, lot.w, lot.d, outside, b.built && !b.ruined);
     return {
       lotW: lot?.w ?? b.w + 4,
       lotD: lot?.d ?? b.d + 4,
-      lotZ, draped, terrain: draped ? this.groundFn : undefined,
+      lotZ, draped, settle, terrain: draped ? this.groundFn : undefined,
       ground: heightAt(this.sim.state.world, b.x, b.y),
       firmName: name,
       firmHue: gov ? gov.hue : firm?.site ? firm.site.color : firm?.hue,
@@ -455,7 +458,13 @@ export class WorldRenderer {
         // inside: drawn when the building is opened up (a tower opened up shows its shops and office floors too)
         const open = st?.outside || !b.built || this.cutaway === b.id || (b.host !== undefined && this.cutaway === b.host);
         if (!open) continue;
-        z = heightAt(w, b.x, b.y) + (st ? st.floor * FLOOR_H : 0) + standHeight(b); // (a trailer's floor is up on blocks)
+        const ly = (st ? st.floor * FLOOR_H : 0) + standHeight(b);
+        z = heightAt(w, b.x, b.y) + ly; // (a trailer's floor is up on blocks)
+        // a building on unleveled countryside ground is bent to meet it (settle.ts): so are the people in it
+        const lot = ctx.lotById.get(b.lot);
+        if (lot && settledLot(b.kind, lot.w, lot.d, !inGrid(w, lot.x, lot.y), b.built && !b.ruined)) {
+          z += (this.terrain.groundY(x, y) - heightAt(w, b.x, b.y) + SETTLE_LIFT) * settleWeight(ly);
+        }
         if (p.pose === 'sleep') z += 0.5;
       } else {
         // in town people walk on raised sidewalks

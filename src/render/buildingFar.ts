@@ -16,6 +16,7 @@ import type { Building } from '../sim/types';
 import { C, Geo, P, Xf, clamp01, hsl, hx, mix, shade } from './buildingGeo';
 import type { BuildingLook, HostedUnit } from './buildingCtx';
 import { hallLook } from './industry';
+import { Settle } from './settle';
 import { aptLook, officeLook } from './midrise';
 import { isTowerKind, offsetOutline, outline, towerHeight, towerPlan, type TowerPlan } from './towers';
 
@@ -176,10 +177,15 @@ class FarWriter {
 export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = [], occ = 1): FarModel {
   const f = new FarWriter(b);
   f.noGround = !!look.draped;
+  // on unleveled countryside ground: bent to meet it like the detailed model (settle.ts)
+  const lwR = Math.max(look.lotW || 0, b.w + 1), ldR = Math.max(look.lotD || 0, b.d + 1);
+  const st = look.settle && look.terrain ? { s: new Settle(b.x, b.y, b.angle, look.ground, look.terrain, Math.hypot(lwR, ldR) / 2 + 8), ground: look.ground } : undefined;
   f.t.push(b.x, look.ground, b.y, Math.PI / 2 - b.angle);
   const r = (k: number) => hash2(b.seed, k);
   const pick = <T>(arr: readonly T[], k: number): T => arr[Math.floor(r(k) * arr.length) % arr.length];
-  const lw = Math.max(look.lotW || 0, b.w + 1), ld = Math.max(look.lotD || 0, b.d + 1);
+  const lw = Math.max(look.lotW || 0, b.w + 1);
+  // (a settled building's yard: only as deep as the lot in front of it, as in the detailed model)
+  const ld0 = Math.max(look.lotD || 0, b.d + 1), ld = look.settle && (look.lotZ ?? 0) < 0 ? Math.max(b.d + 1, Math.min(ld0, 2 * (ld0 / 2 + look.lotZ!))) : ld0;
   const brand = hsl(look.firmHue ?? hash2(b.seed, 991), 0.62, 0.48);
   const fl = Math.max(1, b.floors);
   const def = BUILDINGS[b.kind];
@@ -187,13 +193,13 @@ export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = 
 
   if (isTowerKind(b.kind)) {
     towerFar(f, b, look, units, occ, lw, ld);
-    return finish(f);
+    return finish(f, st);
   }
-  if (b.host !== undefined && b.host >= 0) return finish(f); // shops and office floors: part of their tower
+  if (b.host !== undefined && b.host >= 0) return finish(f, st); // shops and office floors: part of their tower
   if (b.ruined) {
     f.ground(lw, ld, C.dirt);
     f.box(0, 0, b.w - 1, b.d - 1, 0, 0.7, C.rubble, shade(C.rubble, 0.9), null);
-    return finish(f);
+    return finish(f, st);
   }
   if (!b.built) {
     f.ground(lw, ld, C.dirt);
@@ -211,7 +217,7 @@ export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = 
       f.box(0, (Math.max(W, D) + 6) / 2 - 1, 1.0, Math.max(W, D) + 8, H, 0.5, C.yellow, C.yellow, null);
       f.t.pop();
     }
-    return finish(f);
+    return finish(f, st);
   }
 
   switch (b.kind) {
@@ -517,14 +523,15 @@ export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = 
       break;
     }
   }
-  return finish(f);
+  return finish(f, st);
 }
 
-function finish(f: FarWriter): FarModel {
+function finish(f: FarWriter, settle?: { s: Settle; ground: number }): FarModel {
   const parts: Partial<Record<FarStyle, Part>> = {};
   for (const s of STYLES) {
     const g = f.g[s];
     if (g.empty) continue;
+    if (settle) settle.s.applyWorld(g.p, settle.ground);
     parts[s] = { p: g.p.slice(), n: g.n.slice(), c: g.c.slice(), uv: g.uv.slice(), i: g.i.slice(), verts: g.verts };
     g.release();
   }

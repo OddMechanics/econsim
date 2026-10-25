@@ -41,6 +41,7 @@ import { farmhouse, farmyard } from './farms';
 import { bakery, dairyplant, meatplant } from './foodplants';
 import { clinic, hospital } from './health';
 import { isFieldLot } from './farmLayout';
+import { Settle } from './settle';
 import { apartments, bankBlock, officeBlock } from './midrise';
 import { isTowerKind, tower, towerBeacons, towerPlan, towerRuin, towerSite } from './towers';
 
@@ -2186,7 +2187,20 @@ export class BuildingRenderer {
     c.units = e.units;
     c.cutLevel = cut && towerKind ? e.extra.level : -1;
     c.litRes = e.extra.occ / 10;
+    // on unleveled countryside ground: bend the building to meet it (settle.ts). Its yard is drawn
+    // symmetric around the building, so keep it to the depth in front of it (inside the real lot)
+    if (look.settle && (look.lotZ ?? 0) < 0) c.ld = Math.max(b.d + 1, Math.min(c.ld, 2 * (c.ld / 2 + look.lotZ!)));
+    const settle = look.settle && look.terrain ? new Settle(b.x, b.y, b.angle, look.ground, look.terrain, Math.hypot(c.lw, c.ld) / 2 + 8) : null;
+    if (settle) {
+      const adj = (wx: number, ly: number, wz: number) => settle.dyWorld(wx, ly, wz);
+      c.props.adjust = adj;
+      c.insideProps.adjust = adj;
+    }
     generate(c);
+    if (settle) {
+      for (const geo of [c.solid, c.win, c.clear, c.ghost, c.inside]) settle.apply(geo.p);
+      for (const sp of c.signs.values()) settle.apply(sp.geo.p);
+    }
     const tGen = performance.now() - tg;
     const meshes: Mesh[] = [];
     const signs: SignShown[] = [];

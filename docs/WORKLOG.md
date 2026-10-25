@@ -324,3 +324,6 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   farmyard looks + farmhouse), foodplants.ts, health.ts (clinic, hospital with H signs and emergency bay), seamless
   grid edge in terrain.ts; people away at the regional hospital aren't drawn. Assets: public/models/country (Quaternius
   farm animals, Kenney car + nature kits, all CC0; LICENSE.txt). Frame times measured equal or lower in every view.
+- Countryside lot flicker (helper): render/settle.ts lays the lot ground of every built countryside building on the drawn
+  ground (no flat slab), bends buildings, paths, cars and props to the slope at their base, and keeps yards inside the
+  real lot (they used to spill over the road). Flicker test: slab-edge lines gone; what's left is shadow edges and thin rails.
