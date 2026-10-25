@@ -35,6 +35,8 @@ const CELLS = 8; // window cells per texture side
 
 class FarWriter {
   t = new Xf();
+  /** The lot's ground is drawn elsewhere (laid on the countryside's terrain, see fields.ts): no slab. */
+  noGround = false;
   g: Record<FarStyle, Geo>;
   uOff: number;
   vOff: number;
@@ -153,6 +155,7 @@ class FarWriter {
 
   /** Lot ground: a slab that reaches below the terrain on slopes. */
   ground(lw: number, ld: number, col: Color3): void {
+    if (this.noGround) return;
     this.box(0, 0, lw - 0.1, ld - 0.1, -1.4, 1.45, shade(col, 0.85), col, null);
   }
 
@@ -172,6 +175,7 @@ class FarWriter {
 /** Build the far model of a building (world space). */
 export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = [], occ = 1): FarModel {
   const f = new FarWriter(b);
+  f.noGround = !!look.draped;
   f.t.push(b.x, look.ground, b.y, Math.PI / 2 - b.angle);
   const r = (k: number) => hash2(b.seed, k);
   const pick = <T>(arr: readonly T[], k: number): T => arr[Math.floor(r(k) * arr.length) % arr.length];
@@ -361,7 +365,31 @@ export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = 
       f.box(0, bd / 2 + 0.3, bw + 0.6, 0.12, 3.9, 1.1, brand, brand, null);
       break;
     }
-    case 'farm': {
+    case 'farm': case 'vegfarm': case 'dairyfarm': case 'ranch': {
+      if (look.draped) {
+        // a farmyard on a countryside field lot (farms.ts): the main building and its biggest neighbors
+        const bw = b.w - 0.6, bd = b.d - 0.6;
+        if (b.kind === 'farm') {
+          const red = mix(hx('#a8463a'), hx('#8a3a30'), r(2));
+          f.box(0, 0, bw, bd, 0, 4.5, red, null, null);
+          f.gable(0, 0, bw, bd, 4.5, 3.6, r(3) < 0.5 ? hx('#4f4a48') : hx('#6f7478'), red, true, 0.3);
+          for (let k = 0; k < 2; k++) f.box(bw / 2 + 5.2, bd / 2 - 3 - k * 6.4, 5.0, 5.0, 0, 7.5, hx('#c4c8cc'), hx('#d0d4d8'), null);
+        } else if (b.kind === 'vegfarm') {
+          f.box(0, 0, bw, bd, 0, 5.0, hx('#e6e9e4'), hx('#8d8f92'), 'ind', 3);
+          f.box(b.w / 2 + 5.8, b.d / 2 - 6, 5.6, 18, 0, 2.6, hx('#e8ece6'), hx('#e8ece6'), null);
+        } else if (b.kind === 'dairyfarm') {
+          f.box(0, 0, bw, bd, 0, 3.5, hx('#f2f0ea'), null, 'ind', 3);
+          f.gable(0, 0, bw, bd, 3.5, 1.6, hx('#6f7478'), hx('#f2f0ea'), false, 0.5);
+          f.box(-bw / 2 + 2.5, -bd / 2 - 6.5, 5.4, 5.4, 0, 14, hx('#2f4f7a'), hx('#3d6090'), null);
+          f.box(bw / 2 + 9, b.d / 2 - 8, 13, 22, 0.15, 3.6, hx('#c9ccd0'), hx('#8a9096'), null);
+        } else {
+          const wood = mix(hx('#7a5236'), hx('#8a4a34'), r(2));
+          f.box(0, 0, bw, bd, 0, 4.1, wood, null, null);
+          f.gable(0, 0, bw, bd, 4.1, 2.6, hx('#5a5f63'), wood, true, 0.5);
+          f.box(-bw / 2 + 4, -bd / 2 - 6, 9, 7, 0, 5.4, hx('#c9b066'), hx('#6f7478'), null);
+        }
+        break;
+      }
       f.ground(lw, ld, hsl(0.24, 0.32, 0.45));
       const crops = [C.wheat, C.corn, C.veg, C.soil, C.canola];
       const fz0 = -ld / 2 + 1.0, fz1 = Math.min(-b.d / 2 - 2.0, ld / 2 - 4);
@@ -381,6 +409,43 @@ export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = 
       const fhC = pick(P.houseWalls, 6);
       f.box(hx_, -0.3, hw, hd, 0, 3.0, fhC, null, 'res', 2.4);
       f.gable(hx_, -0.3, hw, hd, 3.0, 2.0, pick(P.roofs, 7), fhC, false, 0.4);
+      break;
+    }
+    case 'clinic': {
+      f.ground(lw, ld, C.paving);
+      const W = b.w - 1.2, D = b.d - 1.6, H = fl * FLOOR_H + 0.3;
+      f.box(0, -0.3, W, D, 0, H, hx('#f2f1ec'), hx('#e9e7e2'), 'off', 2.6);
+      f.box(W / 2 - 2.8, -0.3 + D / 2 + 1.2, 5.0, 2.4, 2.85, 0.25, hx('#e9e7e2'), hx('#12827f'), null);
+      break;
+    }
+    case 'hospital': {
+      f.ground(lw, ld, C.paving);
+      const W = b.w - 0.8, D = b.d - 0.8, H = Math.max(2, fl) * FLOOR_H;
+      f.walls(rectPts(W, D, 0), 0, H, hx('#eef0f0'), 'off', 1.6, FLOOR_H);
+      f.prism(rectPts(W, D, 0), H, H + 0.9, hx('#e2e4e4'), hx('#8d8f92'));
+      f.box(W * 0.2, -D * 0.15, W * 0.3, D * 0.35, H, 3.0, hx('#d9dcdc'), hx('#8d8f92'), null);
+      f.box(0, D / 2 - 0.5, 3.4, 0.3, H + 1.1, 3.4, hx('#1f5fae'), hx('#1f5fae'), null);
+      break;
+    }
+    case 'bakery': {
+      f.ground(lw, ld, C.paving);
+      const W = b.w - 0.8, D = b.d - 1.2, brick = pick(P.bricks, 1);
+      f.box(0, -0.4, W, D, 0, 5.2, brick, null, 'ind', 2.2);
+      f.gable(0, -0.4, W, D, 5.2, 1.8, hx('#5d6770'), brick, false, 0.4);
+      f.box(W / 2 + 1.4, -0.4 - D / 2 + 2.2, 2.1, 2.1, 0, 7.9, hx('#eeeeea'), hx('#dcdcd8'), null);
+      break;
+    }
+    case 'farmhouse': {
+      // a traditional farmhouse (farms.ts)
+      f.ground(lw, ld, lawn);
+      const bw = b.w - 1.6, bd = b.d - 3.0, cz = -0.9, H = fl * FLOOR_H;
+      const brick = r(2) < 0.25;
+      const wall = brick ? pick(P.bricks, 3) : hx(['#f4f1ea', '#efe6d0', '#e3e8e6', '#f1e4cc', '#dfe3d0'][Math.floor(r(3) * 5)]);
+      const roofC = hx(['#5d6770', '#4a4f55', '#7b4b3a', '#6c5a48', '#3f4f5a'][Math.floor(r(5) * 5)]);
+      f.box(0, cz, bw, bd, 0, H + 0.45, wall, null, 'res', 2.6);
+      f.gable(0, cz, bw, bd, H + 0.45, bd * 0.55, roofC, wall, false, 0.45);
+      f.box(0, cz + bd / 2 + 1.2, bw + 0.4, 2.4, 0, 0.45, C.woodLight, roofC, null);
+      f.tree(-(r(9) < 0.5 ? 1 : -1) * (bw / 2 + 4.5), cz + bd / 2 + 3.9, 1.8, 3);
       break;
     }
     case 'lumberyard': {
@@ -448,6 +513,7 @@ export function farModel(b: Building, look: BuildingLook, units: HostedUnit[] = 
       }
       if (b.kind === 'carplant') f.box(-bw * 0.2, cz - bd * 0.15, bw * 0.4, bd * 0.4, look.H, 4, hx('#b9c2c9'), hx('#8d8f92'), null);
       if (b.kind === 'foodplant' || b.kind === 'sawmill') f.box(-bw / 2 - 2, cz - bd / 2 + 1.6, 2.8, 2.8, 0, b.kind === 'sawmill' ? 9.2 : 10.6, C.steel, C.steel, null);
+      if (b.kind === 'dairyplant') for (let k = 0; k < 3; k++) f.box(-bw / 2 - 2, cz - bd / 2 + 2 + k * 3.6, 2.8, 2.8, 0, 11.6, hx('#d6dadd'), hx('#e2e5e7'), null);
       break;
     }
   }

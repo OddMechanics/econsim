@@ -1,33 +1,40 @@
-// Terrain, water, the land beyond the map edge, and nature (trees, rocks, ore
-// outcrops, berry bushes, clay mounds).
+// Terrain, water, the land beyond the city's square, and the square's nature
+// (trees, rocks, ore outcrops, berry bushes, clay mounds).
 //
 // The ground is one smooth mesh with shared vertices (2 per tile side) whose
 // heights come straight from `heightAt`, so people and buildings placed with
 // the same function sit exactly on it. Colors are blended per vertex from the
 // tile data sampled through a low-frequency domain warp, so tile borders never
-// show as a grid. Nature is drawn with thin instances at jittered positions.
+// show as a grid. Nature is drawn with thin instances at jittered positions,
+// rebuilt per 250 m cell when its tiles change; the trees go through the
+// level of detail (TreeLod in countryNature.ts).
+//
+// Around the square, rings of vertices run out to the map's edge and on to
+// the horizon (buildOuter). They're colored by the same recipe from the same
+// noise (landColors), with the sim's countryside formulas for the woods, rock
+// and soil, so the two meet without a seam; rocky ground on the square's edge
+// carries on a little past it (natureKind). The countryside's trees and
+// boulders are in countryNature.ts, its fields in fields.ts; both sit on the
+// drawn surface through SurfaceIndex / groundY.
 
 import {
-  BoundingInfo, Color3, Matrix, Mesh, MeshBuilder, Quaternion, Scene, ShadowGenerator, StandardMaterial, Vector3, VertexBuffer, VertexData,
+  BoundingInfo, Color3, Mesh, MeshBuilder, Scene, ShadowGenerator, StandardMaterial, Vector3, VertexBuffer, VertexData,
 } from '@babylonjs/core';
 import { hash2 } from '../sim/rng';
-import type { World } from '../sim/types';
+import type { TileKind, World } from '../sim/types';
 import { MAP } from '../sim/config';
-import { fbm, heightAt, kindAt, onLand, STONE_CAP, tileOf, WOOD_CAP } from '../sim/world';
+import { fbm, fertilityAt, heightAt, kindAt, onLand, STONE_CAP, tileOf, WOOD_CAP } from '../sim/world';
+import { TreeLod } from './countryNature';
+import { Buf, makeTemplate, mix, pushTilt, pushYaw, rgb, setInstances, smoothstep, type NatureId, type RGB } from './natureKit';
+export { rgb, smoothstep, mix, type RGB } from './natureKit';
 
 /** Y of the water surface (water tiles sit at -1.5). */
 export const WATER_LEVEL = -0.4;
 /** Ground vertices per tile side. */
 const RES = 2;
 
-type RGB = [number, number, number];
 
-function rgb(hex: string): RGB {
-  const v = parseInt(hex.slice(1), 16);
-  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
-}
-
-const PAL = {
+export const PAL = {
   dry: rgb('#a7a65c'),
   lush: rgb('#538a3a'),
   meadow: rgb('#6f9a3e'),
@@ -45,180 +52,92 @@ const PAL = {
   outerDark: rgb('#62794a'),
 };
 
-const smoothstep = (a: number, b: number, x: number): number => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
 
-function mix(out: RGB, c: RGB, t: number): void {
-  out[0] += (c[0] - out[0]) * t;
-  out[1] += (c[1] - out[1]) * t;
-  out[2] += (c[2] - out[2]) * t;
-}
 
-/** A field in the countryside: a farm lot and what's on it ('fallow' when nobody farms it). */
-export interface Field { x: number; y: number; angle: number; w: number; d: number; kind: string; look: number }
-
-const FIELD_CELL = 100;
-/** Field colors by what's grown (a few looks each: crops at different stages). */
-const FIELD: Record<string, RGB[]> = {
-  farm: [rgb('#c9b25a'), rgb('#b9a24c'), rgb('#93a446'), rgb('#d2bf72'), rgb('#a39053')], // wheat ripening, young green, stubble
-  vegfarm: [rgb('#4d7432'), rgb('#6b5a3a'), rgb('#5c8238')], // dark leafy rows, tilled soil
-  dairyfarm: [rgb('#5e9a3f'), rgb('#6aa244')], // lush pasture
-  ranch: [rgb('#7b9a4a'), rgb('#86a052')], // grazed pasture
-  fallow: [rgb('#8aa25a'), rgb('#94a464'), rgb('#7f9a55')], // meadow, unfarmed
-  yard: [rgb('#7f8d58')],
-};
-
-// ---------------------------------------------------------------- templates
-
-function paint(m: Mesh, c: RGB): Mesh {
-  const n = m.getTotalVertices();
-  const a = new Float32Array(n * 4);
-  for (let i = 0; i < n; i++) {
-    a[i * 4] = c[0]; a[i * 4 + 1] = c[1]; a[i * 4 + 2] = c[2]; a[i * 4 + 3] = 1;
-  }
-  m.setVerticesData(VertexBuffer.ColorKind, a);
-  return m;
-}
-
-function cone(scene: Scene, dBottom: number, dTop: number, h: number, tess: number, y: number, c: RGB): Mesh {
-  const m = MeshBuilder.CreateCylinder('c', { diameterBottom: dBottom, diameterTop: dTop, height: h, tessellation: tess }, scene);
-  m.position.y = y + h / 2;
-  m.bakeCurrentTransformIntoVertices();
-  return paint(m, c);
-}
-
-/** A lumpy icosphere: radius r, stretched by (sx, sy, sz), vertices pushed in/out by `jitter`. */
-function blob(scene: Scene, r: number, sub: number, pos: [number, number, number], scale: [number, number, number], jitter: number, seed: number, c: RGB, floorY = -Infinity): Mesh {
-  // (Babylon reads subdivisions: 0 as "default 4": a tiny berry would get ~960 vertices; sub 0 means an octahedron here)
-  const m = sub <= 0
-    ? MeshBuilder.CreatePolyhedron('b', { type: 1, size: r * 0.75 }, scene)
-    : MeshBuilder.CreateIcoSphere('b', { radius: r, subdivisions: sub, flat: false }, scene);
-  const p = m.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let i = 0; i < p.length; i += 3) {
-    // shared positions must move together: hash the rounded position
-    const k = hash2(Math.round(p[i] * 1000), Math.round(p[i + 1] * 1000) * 7 + Math.round(p[i + 2] * 1000), seed);
-    const f = 1 + (k - 0.5) * 2 * jitter;
-    p[i] = p[i] * f * scale[0] + pos[0];
-    p[i + 1] = Math.max(floorY, p[i + 1] * f * scale[1]) + pos[1];
-    p[i + 2] = p[i + 2] * f * scale[2] + pos[2];
-  }
-  m.setVerticesData(VertexBuffer.PositionKind, p);
-  const nrm = new Float32Array(p.length);
-  VertexData.ComputeNormals(p, m.getIndices()!, nrm);
-  m.setVerticesData(VertexBuffer.NormalKind, nrm);
-  return paint(m, c);
-}
-
-function merge(parts: Mesh[], name: string, flat = true): Mesh {
-  const m = Mesh.MergeMeshes(parts, true, true)!;
-  m.name = name;
-  if (flat) m.convertToFlatShadedMesh();
-  return m;
-}
-
-type NatureId = 'conifer' | 'oak' | 'birch' | 'stump' | 'rock' | 'ore' | 'bush' | 'mound';
-
-function makeTemplate(scene: Scene, id: NatureId): Mesh {
-  const bark = rgb('#6a4a2f');
-  switch (id) {
-    case 'conifer':
-      return merge([
-        cone(scene, 0.38, 0.24, 1.9, 5, 0, bark),
-        cone(scene, 3.7, 0, 3.6, 7, 1.2, rgb('#2f5d34')),
-        cone(scene, 2.9, 0, 3.0, 7, 3.0, rgb('#33653a')),
-        cone(scene, 2.0, 0, 2.6, 7, 4.8, rgb('#3a6e40')),
-      ], 'conifer');
-    case 'oak':
-      return merge([
-        cone(scene, 0.5, 0.32, 3.2, 6, 0, bark),
-        blob(scene, 2.3, 1, [0, 4.6, 0], [1, 0.85, 1], 0.18, 11, rgb('#4f8a39')),
-        blob(scene, 1.6, 1, [1.2, 3.9, 0.5], [1, 0.85, 1], 0.2, 12, rgb('#5a9440')),
-      ], 'oak');
-    case 'birch':
-      return merge([
-        cone(scene, 0.28, 0.16, 5.2, 6, 0, rgb('#e4e0d6')),
-        blob(scene, 1.35, 1, [0, 5.4, 0], [1, 1.7, 1], 0.22, 13, rgb('#86ad4c')),
-      ], 'birch');
-    case 'stump':
-      return merge([cone(scene, 0.55, 0.45, 0.5, 7, -0.05, rgb('#7a5a3a'))], 'stump');
-    case 'rock':
-      return merge([blob(scene, 1, 1, [0, 0, 0], [1, 1, 1], 0.3, 21, rgb('#ffffff'), -0.35)], 'rock');
-    case 'ore':
-      return merge([
-        blob(scene, 1, 1, [0, 0, 0], [0.9, 1.2, 0.9], 0.28, 31, rgb('#ffffff'), -0.4),
-        blob(scene, 0.55, 1, [0.75, 0, 0.35], [1, 1.4, 1], 0.3, 32, rgb('#c9c2bb'), -0.3),
-      ], 'ore');
-    case 'bush': {
-      const parts = [blob(scene, 0.85, 1, [0, 0.45, 0], [1, 0.75, 1], 0.22, 41, rgb('#3f7a35'), -0.1)];
-      for (let k = 0; k < 9; k++) {
-        const a = k * 2.4, h = 0.25 + 0.5 * hash2(k, 1, 43);
-        const rr = 0.8 * Math.sqrt(1 - h * h * 0.6);
-        parts.push(blob(scene, 0.1, 0, [Math.cos(a) * rr, 0.45 + h * 0.6, Math.sin(a) * rr], [1, 1, 1], 0.1, 44 + k, k % 3 ? rgb('#b3263a') : rgb('#5a2a6a')));
-      }
-      return merge(parts, 'bush');
-    }
-    case 'mound':
-      return merge([
-        blob(scene, 1, 1, [0, 0, 0], [1, 0.38, 1], 0.2, 51, rgb('#ffffff'), -0.05),
-        blob(scene, 0.6, 1, [0.9, 0, 0.4], [1, 0.35, 1], 0.25, 52, rgb('#e6ddd5'), -0.05),
-      ], 'mound');
-  }
-}
-
-const NATURE: NatureId[] = ['conifer', 'oak', 'birch', 'stump', 'rock', 'ore', 'bush', 'mound'];
+/** Templates drawn here (the trees go through the level of detail, see TreeLod). */
+const NATURE: NatureId[] = ['stump', 'rock', 'ore', 'bush', 'mound'];
+/** Tiles per side of a nature cell (= LOD_CELL m). */
+const NAT_CELL = 25;
 const CASTS: Record<NatureId, boolean> = { conifer: true, oak: true, birch: true, stump: false, rock: true, ore: true, bush: true, mound: false };
 
-/** Growable instance buffers (matrix + color). */
-class Buf {
-  m = new Float32Array(16 * 256);
-  c = new Float32Array(4 * 256);
-  n = 0;
-  next(): number {
-    if ((this.n + 1) * 16 > this.m.length) {
-      const m = new Float32Array(this.m.length * 2), c = new Float32Array(this.c.length * 2);
-      m.set(this.m); c.set(this.c);
-      this.m = m; this.c = c;
-    }
-    return this.n++;
-  }
-}
+// ------------------------------------------------------------ surface index
 
-const tmpM = new Matrix();
-const tmpQ = new Quaternion();
-const tmpS = new Vector3();
-const tmpP = new Vector3();
-
-function pushYaw(b: Buf, x: number, y: number, z: number, s: number, sy: number, yaw: number, r: number, g: number, bl: number): void {
-  const c = Math.cos(yaw), sn = Math.sin(yaw);
-  const i = b.next(), m = b.m, o = i * 16;
-  m[o] = s * c; m[o + 1] = 0; m[o + 2] = -s * sn; m[o + 3] = 0;
-  m[o + 4] = 0; m[o + 5] = sy; m[o + 6] = 0; m[o + 7] = 0;
-  m[o + 8] = s * sn; m[o + 9] = 0; m[o + 10] = s * c; m[o + 11] = 0;
-  m[o + 12] = x; m[o + 13] = y; m[o + 14] = z; m[o + 15] = 1;
-  b.c[i * 4] = r; b.c[i * 4 + 1] = g; b.c[i * 4 + 2] = bl; b.c[i * 4 + 3] = 1;
-}
-
-function pushTilt(b: Buf, x: number, y: number, z: number, sx: number, sy: number, sz: number, yaw: number, pitch: number, roll: number, r: number, g: number, bl: number): void {
-  Quaternion.RotationYawPitchRollToRef(yaw, pitch, roll, tmpQ);
-  tmpS.set(sx, sy, sz);
-  tmpP.set(x, y, z);
-  Matrix.ComposeToRef(tmpS, tmpQ, tmpP, tmpM);
-  const i = b.next();
-  b.m.set(tmpM.m, i * 16);
-  b.c[i * 4] = r; b.c[i * 4 + 1] = g; b.c[i * 4 + 2] = bl; b.c[i * 4 + 3] = 1;
-}
+const SURF_CELL = 25;
 
 /**
- * Thin instances with zero instances would draw the template once with a
- * broken instance-color buffer, so empty meshes are hidden instead.
+ * The outer ground mesh's triangles binned on a 25 m grid, so anything laid
+ * on the countryside (trees, field crops, fences, animals) can sit exactly on
+ * the drawn surface instead of on `heightAt`, which the coarse mesh only
+ * follows at its vertices (between them it can be ~0.2 m off).
  */
-function setInstances(mesh: Mesh, b: Buf): void {
-  mesh.isVisible = b.n > 0;
-  if (b.n === 0) return;
-  mesh.thinInstanceSetBuffer('matrix', b.m.slice(0, b.n * 16), 16, true);
-  mesh.thinInstanceSetBuffer('color', b.c.slice(0, b.n * 4), 4, true);
+export class SurfaceIndex {
+  private readonly nx: number;
+  private readonly start: Uint32Array;
+  private readonly tris: Uint32Array;
+
+  constructor(readonly pos: Float32Array, readonly idx: Uint32Array, readonly x0: number, readonly x1: number, readonly nrm: Float32Array | null = null) {
+    const nx = Math.ceil((x1 - x0) / SURF_CELL);
+    this.nx = nx;
+    const count = new Uint32Array(nx * nx + 1);
+    const T = idx.length / 3;
+    const bounds = (t: number): [number, number, number, number] | null => {
+      const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, c = idx[t * 3 + 2] * 3;
+      const minX = Math.min(pos[a], pos[b], pos[c]), maxX = Math.max(pos[a], pos[b], pos[c]);
+      const minY = Math.min(pos[a + 2], pos[b + 2], pos[c + 2]), maxY = Math.max(pos[a + 2], pos[b + 2], pos[c + 2]);
+      if (maxX < x0 || maxY < x0 || minX > x1 || minY > x1) return null;
+      return [Math.max(0, Math.floor((minX - x0) / SURF_CELL)), Math.max(0, Math.floor((minY - x0) / SURF_CELL)),
+        Math.min(nx - 1, Math.floor((maxX - x0) / SURF_CELL)), Math.min(nx - 1, Math.floor((maxY - x0) / SURF_CELL))];
+    };
+    for (let t = 0; t < T; t++) {
+      const bb = bounds(t);
+      if (!bb) continue;
+      for (let j = bb[1]; j <= bb[3]; j++) for (let i = bb[0]; i <= bb[2]; i++) count[j * nx + i + 1]++;
+    }
+    for (let k = 1; k < count.length; k++) count[k] += count[k - 1];
+    this.start = count.slice();
+    const fill = count.slice();
+    this.tris = new Uint32Array(count[count.length - 1]);
+    for (let t = 0; t < T; t++) {
+      const bb = bounds(t);
+      if (!bb) continue;
+      for (let j = bb[1]; j <= bb[3]; j++) for (let i = bb[0]; i <= bb[2]; i++) this.tris[fill[j * nx + i]++] = t;
+    }
+  }
+
+  /** Height of the drawn surface at (x, y), or NaN outside it. */
+  heightAt(x: number, y: number): number {
+    const i = Math.floor((x - this.x0) / SURF_CELL), j = Math.floor((y - this.x0) / SURF_CELL);
+    if (i < 0 || j < 0 || i >= this.nx || j >= this.nx) return NaN;
+    const c = j * this.nx + i, pos = this.pos, idx = this.idx;
+    for (let k = this.start[c]; k < this.start[c + 1]; k++) {
+      const t = this.tris[k];
+      const a = idx[t * 3] * 3, b = idx[t * 3 + 1] * 3, d = idx[t * 3 + 2] * 3;
+      const ax = pos[a], ay = pos[a + 2], bx = pos[b] - ax, by = pos[b + 2] - ay, cx = pos[d] - ax, cy = pos[d + 2] - ay;
+      const den = bx * cy - by * cx;
+      if (Math.abs(den) < 1e-9) continue;
+      const px = x - ax, py = y - ay;
+      const u = (px * cy - py * cx) / den, v = (bx * py - by * px) / den;
+      if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
+      return pos[a + 1] + (pos[b + 1] - pos[a + 1]) * u + (pos[d + 1] - pos[a + 1]) * v;
+    }
+    return NaN;
+  }
+
+  /** Triangles that may overlap the box (each listed once per call, via `seen` stamps). */
+  trianglesIn(minX: number, minY: number, maxX: number, maxY: number, out: number[]): number[] {
+    out.length = 0;
+    const i0 = Math.max(0, Math.floor((minX - this.x0) / SURF_CELL)), i1 = Math.min(this.nx - 1, Math.floor((maxX - this.x0) / SURF_CELL));
+    const j0 = Math.max(0, Math.floor((minY - this.x0) / SURF_CELL)), j1 = Math.min(this.nx - 1, Math.floor((maxY - this.x0) / SURF_CELL));
+    const seen = new Set<number>();
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const c = j * this.nx + i;
+      for (let k = this.start[c]; k < this.start[c + 1]; k++) {
+        const t = this.tris[k];
+        if (!seen.has(t)) { seen.add(t); out.push(t); }
+      }
+    }
+    return out;
+  }
 }
 
 // ------------------------------------------------------------------ renderer
@@ -242,6 +161,11 @@ export class TerrainRenderer {
   // per tile
   private sig = new Uint16Array(0);
   private natSig = new Uint32Array(0); // quantized nature state per tile (skip re-instancing when unchanged)
+  /** Small nature instances per cell (re-instanced only where tiles changed). */
+  private natCell = new Map<number, Map<NatureId, Buf>>();
+  private natCells = 8;
+  /** The square's trees: detailed near the camera, stand-ins farther away. */
+  private readonly treeLod: TreeLod;
   private fForest = new Float32Array(0);
   private fRock = new Float32Array(0);
   private fOre = new Float32Array(0);
@@ -249,8 +173,33 @@ export class TerrainRenderer {
   private fUsed = new Float32Array(0);
   private fFert = new Float32Array(0);
   private seed = 0;
+  /** The seed of the ground's noise (nature out in the countryside uses the same). */
+  get noiseSeed(): number { return this.seed; }
   /** The world's height version the ground mesh was built for (the renderer calls in at most every 2 seconds). */
   private hver = 0;
+  /** The outer ground's triangles (for laying things exactly on it). */
+  surface: SurfaceIndex | null = null;
+
+  /**
+   * Height of the drawn ground at (x, y): on the city's grid the exact
+   * triangle of the ground mesh, outside it the outer mesh's (falls back to
+   * `heightAt` beyond the map).
+   */
+  groundY(x: number, y: number): number {
+    const w = this.world, M = this.M, step = w.tile / RES;
+    const S = w.size * w.tile;
+    if (x >= 0 && y >= 0 && x <= S && y <= S && M > 1) {
+      const fx = Math.min(M - 1.0001, x / step), fy = Math.min(M - 1.0001, y / step);
+      const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+      const hv = this.hv;
+      const a = hv[j * M + i], b = hv[j * M + i + 1], c = hv[(j + 1) * M + i + 1], d = hv[(j + 1) * M + i];
+      // the same diagonal buildGround picked
+      if (Math.abs(a - c) <= Math.abs(b - d)) return u >= v ? a + (b - a) * u + (c - b) * v : a + (c - d) * u + (d - a) * v;
+      return u + v <= 1 ? a + (b - a) * u + (d - a) * v : c + (d - c) * (1 - u) + (b - c) * (1 - v);
+    }
+    const h = this.surface ? this.surface.heightAt(x, y) : NaN;
+    return Number.isNaN(h) ? heightAt(w, x, y) : h;
+  }
 
   constructor(private readonly scene: Scene, private readonly shadows: ShadowGenerator | null, world: World) {
     this.groundMat = new StandardMaterial('terrainMat', scene);
@@ -280,6 +229,7 @@ export class TerrainRenderer {
       this.nature.set(id, m);
       this.natureMats.push(mat);
     }
+    this.treeLod = new TreeLod(scene, shadows, 'gt', 9000);
     this.setWorld(world);
   }
 
@@ -290,6 +240,9 @@ export class TerrainRenderer {
     const S = world.size * world.tile;
     for (const m of this.nature.values()) m.setBoundingInfo(new BoundingInfo(new Vector3(-10, -5, -10), new Vector3(S + 10, 40, S + 10)));
     this.seed = Math.floor(hash2(world.size, Math.round(world.height[(world.size * world.size) >> 1] * 1000), 5) * 100000);
+    this.natCells = Math.ceil(world.size / NAT_CELL);
+    this.natCell.clear();
+    this.treeLod.clear();
     this.buildGround();
     this.buildOuter();
     this.buildWater();
@@ -343,6 +296,7 @@ export class TerrainRenderer {
     }
     this.nature.clear();
     for (const m of this.natureMats) m.dispose();
+    this.treeLod.dispose();
     this.groundMat.dispose();
     this.waterMat.dispose();
     this.outerMat.dispose();
@@ -561,52 +515,10 @@ export class TerrainRenderer {
     }
   }
 
-  // ---------------------------------------------------- outside the map
-
-  /** The countryside's fields (farm lots out there), for coloring the ground beyond the city. */
-  private fields: Field[] = [];
-  private fieldCells = new Map<number, number[]>();
-  private fieldKey = '';
-
-  /** Tell the ground what grows where in the countryside (recolors only when something changed). */
-  setFields(list: Field[]): void {
-    const key = list.map((f) => `${Math.round(f.x)},${Math.round(f.y)},${f.kind}`).join(';');
-    if (key === this.fieldKey) return;
-    this.fieldKey = key;
-    this.fields = list;
-    this.fieldCells.clear();
-    for (let i = 0; i < list.length; i++) {
-      const f = list[i];
-      const r = Math.hypot(f.w, f.d) / 2;
-      for (let cx = Math.floor((f.x - r) / FIELD_CELL); cx <= Math.floor((f.x + r) / FIELD_CELL); cx++) {
-        for (let cy = Math.floor((f.y - r) / FIELD_CELL); cy <= Math.floor((f.y + r) / FIELD_CELL); cy++) {
-          const k = cx * 10000 + cy;
-          const arr = this.fieldCells.get(k);
-          if (arr) arr.push(i); else this.fieldCells.set(k, [i]);
-        }
-      }
-    }
-    if (this.outer) this.colorOuter(this.outer.getVerticesData(VertexBuffer.PositionKind) as Float32Array, this.outerBase, true);
-  }
-
-  /** The field a point lies in, if any. */
-  private fieldAt(x: number, y: number): Field | undefined {
-    const ids = this.fieldCells.get(Math.floor(x / FIELD_CELL) * 10000 + Math.floor(y / FIELD_CELL));
-    if (!ids) return undefined;
-    for (const i of ids) {
-      const f = this.fields[i];
-      const dx = x - f.x, dy = y - f.y;
-      const c = Math.cos(f.angle), sn = Math.sin(f.angle);
-      // depth runs along the facing direction, width across it
-      if (Math.abs(dx * c + dy * sn) <= f.d / 2 && Math.abs(-dx * sn + dy * c) <= f.w / 2) return f;
-    }
-    return undefined;
-  }
-
   // ---------------------------------------------------- outside the grid
 
-  /** Per outer vertex: the city-edge color it starts from, and how far out it is (for the blend). */
-  private outerBase = new Float32Array(0);
+  /** Per outer vertex: its ground color before the fields are painted in (r, g, b). */
+  private outerLand: Float32Array = new Float32Array(0);
 
   private buildOuter(): void {
     const M = this.M, w = this.world, step = w.tile / RES;
@@ -635,18 +547,6 @@ export class TerrainRenderer {
     for (let d = 120; d < reach + 60; d += 20) D.push(d);
     D.push(reach + 60, reach + 300, reach + 800, reach + 1600, reach + 2800, reach + 4500);
     const L = loop.length, R = D.length;
-    // a blurred copy of the border (height and color): the land carries on the city edge's general look, not every tree and rock on it
-    const W = 14;
-    const sc = new Float32Array(L * 3);
-    for (let e = 0; e < L; e++) {
-      let r = 0, g = 0, b = 0;
-      for (let k = -W; k <= W; k++) {
-        const v = loop[(e + k + L) % L].v;
-        r += this.col[v * 4]; g += this.col[v * 4 + 1]; b += this.col[v * 4 + 2];
-      }
-      const f = 1 / (2 * W + 1);
-      sc[e * 3] = r * f; sc[e * 3 + 1] = g * f; sc[e * 3 + 2] = b * f;
-    }
     // each ring keeps the loop entries that space its vertices ~5 m near the city, ~20 m across the fields, coarser on the horizon
     const rings: number[][] = [];
     for (let r = 0; r < R; r++) {
@@ -674,14 +574,14 @@ export class TerrainRenderer {
         pos[vi * 3] = x;
         pos[vi * 3 + 1] = r === 0 ? this.hv[v] : heightAt(w, x, y);
         pos[vi * 3 + 2] = y;
-        base[vi * 4] = r === 0 ? this.col[v * 4] : sc[e * 3];
-        base[vi * 4 + 1] = r === 0 ? this.col[v * 4 + 1] : sc[e * 3 + 1];
-        base[vi * 4 + 2] = r === 0 ? this.col[v * 4 + 2] : sc[e * 3 + 2];
+        // the color of the city-edge vertex it radiates from (the first few metres blend from it)
+        base[vi * 4] = this.col[v * 4];
+        base[vi * 4 + 1] = this.col[v * 4 + 1];
+        base[vi * 4 + 2] = this.col[v * 4 + 2];
         base[vi * 4 + 3] = d;
         vi++;
       }
     }
-    this.outerBase = base;
     const idx: number[] = [];
     const up = (a: number, b: number, c: number) => {
       const area = (pos[b * 3] - pos[a * 3]) * (pos[c * 3 + 2] - pos[a * 3 + 2]) - (pos[b * 3 + 2] - pos[a * 3 + 2]) * (pos[c * 3] - pos[a * 3]);
@@ -708,11 +608,13 @@ export class TerrainRenderer {
       const v = loop[rings[0][k]].v;
       nrm[k * 3] = gn[v * 3]; nrm[k * 3 + 1] = gn[v * 3 + 1]; nrm[k * 3 + 2] = gn[v * 3 + 2];
     }
+    this.surface = new SurfaceIndex(pos, Uint32Array.from(idx), MAP.min - 100, MAP.max + 100, nrm);
+    this.outerLand = this.landColors(pos, nrm, base);
     const vd = new VertexData();
     vd.positions = pos;
     vd.indices = idx;
     vd.normals = nrm;
-    vd.colors = this.colorOuter(pos, base, false);
+    vd.colors = this.colorOuter(pos, false);
     const m = new Mesh('outerGround', this.scene);
     vd.applyToMesh(m, true);
     m.material = this.outerMat;
@@ -724,38 +626,91 @@ export class TerrainRenderer {
   }
 
   /**
-   * Colors of the land beyond the city: meadow and woods, and the fields by
-   * what's grown on them (golden grain, dark vegetable rows, green pasture),
-   * blending from the city's edge.
+   * What the ground is, for drawing: the sim's `kindAt`, except that rocky
+   * ground at the city square's edge carries on a ragged 25-135 m past it
+   * (the square also has rock on high ground, which the countryside's formula
+   * doesn't know), so outcrops end naturally instead of at the border.
    */
-  private colorOuter(pos: Float32Array, base: Float32Array, apply: boolean): Float32Array {
-    const w = this.world, s = this.seed;
+  natureKind(x: number, y: number): TileKind {
+    const w = this.world, T = w.tile, S = w.size * T;
+    if (x >= 0 && y >= 0 && x < S && y < S) return w.kind[tileOf(w, x, y)];
+    const bx = Math.min(S - T / 2, Math.max(T / 2, x)), by = Math.min(S - T / 2, Math.max(T / 2, y));
+    const d = Math.hypot(x - bx, y - by) - T / 2;
+    if (d < 140 && w.kind[tileOf(w, bx, by)] === 'rock' && d < 25 + 110 * fbm(x / 60, y / 60, this.seed + 81, 2)) return 'rock';
+    return kindAt(w, x, y);
+  }
+
+  /**
+   * The ground's colors beyond the city's square, by the same recipe as on it
+   * (grass by soil, forest floor, bare rock and steep slopes, beaches), from
+   * the same noise, so the two meet without a seam; the first metres blend
+   * from the square's edge colors.
+   */
+  private landColors(pos: Float32Array, nrm: Float32Array, base: Float32Array): Float32Array {
+    const w = this.world, s = this.seed, T = w.tile;
     const n = pos.length / 3;
-    const cols = new Float32Array(n * 4);
-    const c: RGB = [0, 0, 0];
+    const out = new Float32Array(n * 3);
+    const c: RGB = [0, 0, 0], floor: RGB = [0, 0, 0], r: RGB = [0, 0, 0];
     for (let vi = 0; vi < n; vi++) {
-      const x = pos[vi * 3], y = pos[vi * 3 + 2], d = base[vi * 4 + 3];
-      c[0] = PAL.outer[0]; c[1] = PAL.outer[1]; c[2] = PAL.outer[2];
-      mix(c, PAL.outerDark, smoothstep(0.4, 0.65, fbm(x / 260, y / 260, s + 63, 3)));
-      if (onLand(x, y)) {
-        const k = kindAt(w, x, y);
-        if (k === 'forest') mix(c, PAL.forest, 0.85);
-        else if (k === 'rock') mix(c, PAL.rock, 0.8);
-        else {
-          const f = this.fieldAt(x, y);
-          if (f) {
-            const tint = FIELD[f.kind] ?? FIELD.fallow;
-            const pick = tint[f.look % tint.length];
-            // a little texture within a field (wetter and drier patches)
-            mix(c, pick, 0.82 + 0.12 * fbm(x / 40, y / 40, s + 64, 2));
-          }
+      const x = pos[vi * 3], h = pos[vi * 3 + 1], y = pos[vi * 3 + 2], d = base[vi * 4 + 3];
+      const nA = fbm(x / 160, y / 160, s + 3, 2), nB = fbm(x / 34, y / 34, s + 4, 3);
+      // (the finest mottling only where the vertices are close enough to show it)
+      const nC = 0.5 + (fbm(x / 7, y / 7, s + 5, 2) - 0.5) * (1 - smoothstep(30, 110, d));
+      // forest and rock at a warped point, bilinear over a 10 m lattice (like the square's tiles)
+      const px = x + (fbm(x / 70, y / 70, s + 1, 3) - 0.5) * 26, py = y + (fbm(x / 70, y / 70, s + 2, 3) - 0.5) * 26;
+      const fx = px / T - 0.5, fy = py / T - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), ax = fx - x0, ay = fy - y0;
+      let forest = 0, rock = 0;
+      const land = onLand(px, py) ? 1 : 0;
+      if (land) {
+        for (let k = 0; k < 4; k++) {
+          const ox = k & 1, oy = k >> 1;
+          const wt = (ox ? ax : 1 - ax) * (oy ? ay : 1 - ay);
+          const kd = this.natureKind((x0 + ox + 0.5) * T, (y0 + oy + 0.5) * T);
+          if (kd === 'forest') forest += wt; else if (kd === 'rock') rock += wt;
         }
       }
-      const cb = smoothstep(0, 110, d);
-      cols[vi * 4] = base[vi * 4] + (c[0] - base[vi * 4]) * cb;
-      cols[vi * 4 + 1] = base[vi * 4 + 1] + (c[1] - base[vi * 4 + 1]) * cb;
-      cols[vi * 4 + 2] = base[vi * 4 + 2] + (c[2] - base[vi * 4 + 2]) * cb;
-      cols[vi * 4 + 3] = 1;
+      // (the countryside's soil formula runs a little richer than the square's: match its look)
+      const fert = fertilityAt(w, px, py) - 0.12;
+      const lushT = smoothstep(0.05, 0.85, fert + (nB - 0.5) * 0.45);
+      c[0] = PAL.dry[0]; c[1] = PAL.dry[1]; c[2] = PAL.dry[2];
+      mix(c, PAL.lush, lushT);
+      mix(c, PAL.meadow, smoothstep(0.45, 0.75, nA) * 0.35);
+      const fo = smoothstep(0.2, 0.75, forest + (nB - 0.5) * 0.3);
+      if (fo > 0) {
+        floor[0] = PAL.forest[0]; floor[1] = PAL.forest[1]; floor[2] = PAL.forest[2];
+        mix(floor, PAL.forestLitter, nC * 0.6);
+        mix(c, floor, fo);
+      }
+      const steep = smoothstep(0.93, 0.8, nrm[vi * 3 + 1]);
+      const rk = Math.max(smoothstep(0.25, 0.7, rock + (nB - 0.5) * 0.35), steep * 0.85);
+      if (rk > 0) {
+        r[0] = PAL.rockDark[0]; r[1] = PAL.rockDark[1]; r[2] = PAL.rockDark[2];
+        mix(r, PAL.rock, Math.min(1, nC * 1.2 + (nA - 0.5) * 0.4));
+        mix(c, r, rk);
+      }
+      if (h < 0.8) {
+        const sand = 1 - smoothstep(0.05, 0.75, h + (nB - 0.5) * 0.5);
+        mix(c, PAL.sand, sand * (1 - rk * 0.6));
+        if (h < WATER_LEVEL + 0.15) mix(c, PAL.wetSand, smoothstep(WATER_LEVEL + 0.15, WATER_LEVEL - 0.2, h));
+        if (h < WATER_LEVEL - 0.2) mix(c, PAL.deep, smoothstep(WATER_LEVEL - 0.2, -1.45, h));
+      }
+      const b = 0.9 + 0.18 * nC;
+      const e = smoothstep(0, 30, d);
+      for (let k = 0; k < 3; k++) out[vi * 3 + k] = base[vi * 4 + k] + (c[k] * b - base[vi * 4 + k]) * e;
+    }
+    return out;
+  }
+
+  /**
+   * Colors of the land beyond the city (see landColors). The farms' crops,
+   * pastures and yards are laid on top of it (fields.ts).
+   */
+  private colorOuter(pos: Float32Array, apply: boolean): Float32Array {
+    const land = this.outerLand;
+    const n = pos.length / 3;
+    const cols = new Float32Array(n * 4);
+    for (let vi = 0; vi < n; vi++) {
+      cols[vi * 4] = land[vi * 3]; cols[vi * 4 + 1] = land[vi * 3 + 1]; cols[vi * 4 + 2] = land[vi * 3 + 2]; cols[vi * 4 + 3] = 1;
     }
     if (apply && this.outer) this.outer.updateVerticesData(VertexBuffer.ColorKind, cols);
     return cols;
@@ -778,43 +733,51 @@ export class TerrainRenderer {
    * Visible stock levels per tile. Instances are a pure function of these, so
    * when none changed (most world.ver bumps) nothing is re-instanced.
    */
-  private natureLevels(): boolean {
-    const w = this.world, N = w.size * w.size;
-    let changed = false;
+  private natureLevels(): Set<number> {
+    const w = this.world, n = w.size, N = n * n;
+    const dirty = new Set<number>();
+    const q = (v: number, cap: number, levels: number) => Math.min(levels, Math.ceil((v / cap) * levels - 1e-6));
     for (let i = 0; i < N; i++) {
-      const q = (v: number, cap: number, levels: number) => Math.min(levels, Math.ceil((v / cap) * levels - 1e-6));
       const sg = (w.used[i] ? 1 : 0) | (q(w.wood[i], WOOD_CAP, 20) << 1) | (q(w.stone[i], STONE_CAP, 8) << 6)
         | (q(w.ore[i], Math.max(1, w.oreCap[i]), 8) << 10) | (q(w.forage[i], Math.max(1, w.forageCap[i]), 8) << 14)
         | (q(w.clay[i], Math.max(1, w.clayCap[i]), 8) << 18) | ((w.kind[i] === 'forest' ? 1 : 0) << 22);
-      if (sg !== this.natSig[i]) { this.natSig[i] = sg; changed = true; }
+      if (sg === this.natSig[i]) continue;
+      this.natSig[i] = sg;
+      // the cells of this tile and its neighbors (a used tile keeps nature off the tiles around it)
+      const x = i % n, y = (i - x) / n;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < n && yy < n) dirty.add(Math.floor(yy / NAT_CELL) * this.natCells + Math.floor(xx / NAT_CELL));
+      }
     }
-    return changed;
+    return dirty;
   }
 
+  /**
+   * Instance the nature of the cells whose tiles changed (trees go to the
+   * level-of-detail manager, the small things into one buffer per template).
+   */
   private placeNature(): void {
-    if (!this.natureLevels()) return;
+    const dirty = this.natureLevels();
+    if (!dirty.size) return;
     const w = this.world;
     const n = w.size, T = w.tile;
-    const bufs = new Map<NatureId, Buf>();
-    for (const id of NATURE) bufs.set(id, new Buf());
-    const B = (id: NatureId) => bufs.get(id)!;
     const s = this.seed;
     const used = w.used;
     const sig = this.natSig;
     // keep nature off roads: the sim only marks the tiles under a road's
     // centerline, so also look a few meters around each instance (only tiles
     // next to a used tile need the check: the radius is below a tile)
-    const near = new Uint8Array(n * n);
-    for (let i = 0; i < n * n; i++) {
-      if (!used[i]) continue;
+    const nearUsed = (i: number): boolean => {
       const x = i % n, y = (i - x) / n;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const xx = x + dx, yy = y + dy;
-          if (xx >= 0 && yy >= 0 && xx < n && yy < n) near[yy * n + xx] = 1;
+          if (xx >= 0 && yy >= 0 && xx < n && yy < n && used[yy * n + xx]) return true;
         }
       }
-    }
+      return false;
+    };
     let nearTile = false;
     const clear = (x: number, y: number, r: number): boolean => {
       if (!nearTile) return true;
@@ -825,101 +788,129 @@ export class TerrainRenderer {
       }
       return true;
     };
-    for (let ty = 0; ty < n; ty++) {
-      for (let tx = 0; tx < n; tx++) {
-        const i = ty * n + tx;
-        if (used[i]) continue;
-        const kind = w.kind[i];
-        if (kind === 'water') continue;
-        nearTile = near[i] === 1;
-        const H = (k: number) => hash2(tx, ty, s + k);
-        const lv = sig[i];
+    for (const cell of dirty) {
+      const cx = cell % this.natCells, cy = Math.floor(cell / this.natCells);
+      const bufs = new Map<NatureId, Buf>();
+      for (const id of NATURE) bufs.set(id, new Buf());
+      const trees = [new Buf(), new Buf(), new Buf()];
+      const B = (id: NatureId) => id === 'conifer' ? trees[0] : id === 'oak' ? trees[1] : id === 'birch' ? trees[2] : bufs.get(id)!;
+      for (let ty = cy * NAT_CELL; ty < Math.min(n, (cy + 1) * NAT_CELL); ty++) {
+        for (let tx = cx * NAT_CELL; tx < Math.min(n, (cx + 1) * NAT_CELL); tx++) {
+          const i = ty * n + tx;
+          if (used[i]) continue;
+          const kind = w.kind[i];
+          if (kind === 'water') continue;
+          nearTile = nearUsed(i);
+          const H = (k: number) => hash2(tx, ty, s + k);
+          const lv = sig[i];
 
-        // ---- trees
-        const wood = w.wood[i];
-        if (wood > 0 || kind === 'forest') {
-          const frac = ((lv >> 1) & 31) / 20;
-          const mood = fbm(tx / 9, ty / 9, s + 71, 2) + (H(1) - 0.5) * 0.25; // stands of one kind
-          const high = w.height[i];
-          for (let k = 0; k < 4; k++) {
-            const th = k * 0.22;
-            const sx = k & 1, sy = k >> 1;
-            const x = (tx + (sx + 0.08 + 0.84 * H(10 + k)) / 2) * T;
-            const y = (ty + (sy + 0.08 + 0.84 * H(20 + k)) / 2) * T;
-            if (frac > th + 0.015) {
-              if (!clear(x, y, 6.5)) continue;
-              const grow = Math.min(1, Math.max(0.2, (frac - th) / 0.4));
-              const size = (0.42 + 0.58 * grow) * (0.82 + 0.36 * H(30 + k));
-              const v = mood + (H(40 + k) - 0.5) * 0.3 + (high > 4.5 ? 0.15 : 0);
-              const id: NatureId = H(50 + k) < 0.12 && v < 0.6 ? 'birch' : v > 0.52 ? 'conifer' : 'oak';
-              const tint = 0.86 + 0.26 * H(60 + k);
-              const warm = (H(70 + k) - 0.5) * 0.12;
-              pushYaw(B(id), x, heightAt(w, x, y) - 0.15, y, size, size * (0.9 + 0.25 * H(80 + k)), H(90 + k) * 6.283,
-                tint * (1 + warm), tint, tint * (1 - warm));
-            } else if (kind === 'forest' && frac < 0.5 && H(95 + k) < 0.7 && clear(x, y, 4)) {
-              const sz = 0.8 + 0.5 * H(30 + k);
-              pushYaw(B('stump'), x, heightAt(w, x, y), y, sz, sz * (0.7 + 0.6 * H(31 + k)), H(90 + k) * 6.283, 1, 1, 1);
+          // ---- trees
+          const wood = w.wood[i];
+          if (wood > 0 || kind === 'forest') {
+            const frac = ((lv >> 1) & 31) / 20;
+            const mood = fbm(tx / 9, ty / 9, s + 71, 2) + (H(1) - 0.5) * 0.25; // stands of one kind
+            const high = w.height[i];
+            for (let k = 0; k < 4; k++) {
+              const th = k * 0.22;
+              const sx = k & 1, sy = k >> 1;
+              const x = (tx + (sx + 0.08 + 0.84 * H(10 + k)) / 2) * T;
+              const y = (ty + (sy + 0.08 + 0.84 * H(20 + k)) / 2) * T;
+              if (frac > th + 0.015) {
+                if (!clear(x, y, 6.5)) continue;
+                const grow = Math.min(1, Math.max(0.2, (frac - th) / 0.4));
+                const size = (0.42 + 0.58 * grow) * (0.82 + 0.36 * H(30 + k));
+                const v = mood + (H(40 + k) - 0.5) * 0.3 + (high > 4.5 ? 0.15 : 0);
+                const id: NatureId = H(50 + k) < 0.12 && v < 0.6 ? 'birch' : v > 0.52 ? 'conifer' : 'oak';
+                const tint = 0.86 + 0.26 * H(60 + k);
+                const warm = (H(70 + k) - 0.5) * 0.12;
+                pushYaw(B(id), x, heightAt(w, x, y) - 0.15, y, size, size * (0.9 + 0.25 * H(80 + k)), H(90 + k) * 6.283,
+                  tint * (1 + warm), tint, tint * (1 - warm));
+              } else if (kind === 'forest' && frac < 0.5 && H(95 + k) < 0.7 && clear(x, y, 4)) {
+                const sz = 0.8 + 0.5 * H(30 + k);
+                pushYaw(B('stump'), x, heightAt(w, x, y), y, sz, sz * (0.7 + 0.6 * H(31 + k)), H(90 + k) * 6.283, 1, 1, 1);
+              }
             }
           }
-        }
 
-        // ---- rocks and ore
-        if (kind === 'rock') {
-          const frac = ((lv >> 6) & 15) / 8;
-          const hasOre = w.oreCap[i] > 0 && w.ore[i] > 2;
-          const count = frac < 0.03 ? 0 : 1 + Math.floor(frac * 1.6 + H(100) * 0.8) - (hasOre ? 1 : 0);
-          for (let k = 0; k < count; k++) {
-            const x = (tx + 0.1 + 0.8 * H(110 + k)) * T, y = (ty + 0.1 + 0.8 * H(120 + k)) * T;
-            if (!clear(x, y, 4)) continue;
-            const sz = (0.5 + 1.6 * frac) * (k === 0 ? 1.3 : 0.55 + 0.6 * H(130 + k));
-            const g = 0.5 + 0.13 * H(140 + k), warm = (H(150 + k) - 0.5) * 0.05;
-            const sy = sz * (0.55 + 0.4 * H(160 + k));
-            pushTilt(B('rock'), x, heightAt(w, x, y) - sy * 0.15, y, sz * (0.85 + 0.4 * H(170 + k)), sy, sz * (0.85 + 0.4 * H(180 + k)),
-              H(190 + k) * 6.283, (H(200 + k) - 0.5) * 0.4, (H(210 + k) - 0.5) * 0.4, g + warm, g, g - warm);
-          }
-          if (hasOre) {
-            const of = ((lv >> 10) & 15) / 8;
-            const oc = 1 + Math.floor(of * 1.4 + H(220) * 0.7);
-            for (let k = 0; k < oc; k++) {
-              const x = (tx + 0.12 + 0.76 * H(230 + k)) * T, y = (ty + 0.12 + 0.76 * H(240 + k)) * T;
+          // ---- rocks and ore
+          if (kind === 'rock') {
+            const frac = ((lv >> 6) & 15) / 8;
+            const hasOre = w.oreCap[i] > 0 && w.ore[i] > 2;
+            const count = frac < 0.03 ? 0 : 1 + Math.floor(frac * 1.6 + H(100) * 0.8) - (hasOre ? 1 : 0);
+            for (let k = 0; k < count; k++) {
+              const x = (tx + 0.1 + 0.8 * H(110 + k)) * T, y = (ty + 0.1 + 0.8 * H(120 + k)) * T;
               if (!clear(x, y, 4)) continue;
-              const sz = (0.55 + 0.9 * of) * (0.8 + 0.5 * H(250 + k));
-              const r = 0.56 + 0.1 * H(260 + k);
-              pushTilt(B('ore'), x, heightAt(w, x, y) - sz * 0.1, y, sz, sz * (0.8 + 0.4 * H(270 + k)), sz,
-                H(280 + k) * 6.283, (H(290 + k) - 0.5) * 0.5, (H(300 + k) - 0.5) * 0.5, r, r * 0.62, r * 0.47);
+              const sz = (0.5 + 1.6 * frac) * (k === 0 ? 1.3 : 0.55 + 0.6 * H(130 + k));
+              const g = 0.5 + 0.13 * H(140 + k), warm = (H(150 + k) - 0.5) * 0.05;
+              const sy = sz * (0.55 + 0.4 * H(160 + k));
+              pushTilt(B('rock'), x, heightAt(w, x, y) - sy * 0.15, y, sz * (0.85 + 0.4 * H(170 + k)), sy, sz * (0.85 + 0.4 * H(180 + k)),
+                H(190 + k) * 6.283, (H(200 + k) - 0.5) * 0.4, (H(210 + k) - 0.5) * 0.4, g + warm, g, g - warm);
+            }
+            if (hasOre) {
+              const of = ((lv >> 10) & 15) / 8;
+              const oc = 1 + Math.floor(of * 1.4 + H(220) * 0.7);
+              for (let k = 0; k < oc; k++) {
+                const x = (tx + 0.12 + 0.76 * H(230 + k)) * T, y = (ty + 0.12 + 0.76 * H(240 + k)) * T;
+                if (!clear(x, y, 4)) continue;
+                const sz = (0.55 + 0.9 * of) * (0.8 + 0.5 * H(250 + k));
+                const r = 0.56 + 0.1 * H(260 + k);
+                pushTilt(B('ore'), x, heightAt(w, x, y) - sz * 0.1, y, sz, sz * (0.8 + 0.4 * H(270 + k)), sz,
+                  H(280 + k) * 6.283, (H(290 + k) - 0.5) * 0.5, (H(300 + k) - 0.5) * 0.5, r, r * 0.62, r * 0.47);
+              }
             }
           }
-        }
 
-        // ---- berry bushes
-        if (w.forage[i] > 0.5) {
-          const f = ((lv >> 14) & 15) / 8;
-          const cx = (tx + 0.25 + 0.5 * H(310)) * T, cy = (ty + 0.25 + 0.5 * H(320)) * T;
-          const cnt = 1 + (H(330) < 0.6 ? 1 : 0) + (f > 0.6 ? 1 : 0);
-          for (let k = 0; k < cnt; k++) {
-            const a = H(340 + k) * 6.283, d = k === 0 ? 0 : 1.2 + 1.2 * H(350 + k);
-            const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
-            if (!clear(x, y, 3)) continue;
-            const sz = (0.55 + 0.5 * f) * (0.8 + 0.4 * H(360 + k));
-            const g = 0.85 + 0.25 * H(370 + k);
-            pushYaw(B('bush'), x, heightAt(w, x, y) - 0.05, y, sz, sz * (0.85 + 0.3 * H(380 + k)), H(390 + k) * 6.283, g, g, g);
+          // ---- berry bushes
+          if (w.forage[i] > 0.5) {
+            const f = ((lv >> 14) & 15) / 8;
+            const cx = (tx + 0.25 + 0.5 * H(310)) * T, cy = (ty + 0.25 + 0.5 * H(320)) * T;
+            const cnt = 1 + (H(330) < 0.6 ? 1 : 0) + (f > 0.6 ? 1 : 0);
+            for (let k = 0; k < cnt; k++) {
+              const a = H(340 + k) * 6.283, d = k === 0 ? 0 : 1.2 + 1.2 * H(350 + k);
+              const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+              if (!clear(x, y, 3)) continue;
+              const sz = (0.55 + 0.5 * f) * (0.8 + 0.4 * H(360 + k));
+              const g = 0.85 + 0.25 * H(370 + k);
+              pushYaw(B('bush'), x, heightAt(w, x, y) - 0.05, y, sz, sz * (0.85 + 0.3 * H(380 + k)), H(390 + k) * 6.283, g, g, g);
+            }
           }
-        }
 
-        // ---- clay mounds
-        if (w.clayCap[i] > 0 && w.clay[i] > 1) {
-          const f = ((lv >> 18) & 15) / 8;
-          const cnt = 1 + (H(400) < 0.5 ? 1 : 0);
-          for (let k = 0; k < cnt; k++) {
-            const x = (tx + 0.15 + 0.7 * H(410 + k)) * T, y = (ty + 0.15 + 0.7 * H(420 + k)) * T;
-            if (!clear(x, y, 3)) continue;
-            const sz = (0.7 + 0.9 * f) * (0.8 + 0.4 * H(430 + k));
-            const r = 0.6 + 0.08 * H(440 + k);
-            pushYaw(B('mound'), x, heightAt(w, x, y) - 0.05, y, sz, sz * (0.8 + 0.4 * f), H(450 + k) * 6.283, r, r * 0.62, r * 0.42);
+          // ---- clay mounds
+          if (w.clayCap[i] > 0 && w.clay[i] > 1) {
+            const f = ((lv >> 18) & 15) / 8;
+            const cnt = 1 + (H(400) < 0.5 ? 1 : 0);
+            for (let k = 0; k < cnt; k++) {
+              const x = (tx + 0.15 + 0.7 * H(410 + k)) * T, y = (ty + 0.15 + 0.7 * H(420 + k)) * T;
+              if (!clear(x, y, 3)) continue;
+              const sz = (0.7 + 0.9 * f) * (0.8 + 0.4 * H(430 + k));
+              const r = 0.6 + 0.08 * H(440 + k);
+              pushYaw(B('mound'), x, heightAt(w, x, y) - 0.05, y, sz, sz * (0.8 + 0.4 * f), H(450 + k) * 6.283, r, r * 0.62, r * 0.42);
+            }
           }
         }
       }
+      this.natCell.set(cell, bufs);
+      if (trees[0].n + trees[1].n + trees[2].n) this.treeLod.put(cell, cx * NAT_CELL * T, cy * NAT_CELL * T, trees);
+      else this.treeLod.remove(cell);
     }
-    for (const id of NATURE) setInstances(this.nature.get(id)!, B(id));
+    this.treeLod.commit();
+    // the small things: every cell's instances in one buffer per template
+    for (const id of NATURE) {
+      const all = new Buf();
+      for (const bufs of this.natCell.values()) {
+        const b = bufs.get(id)!;
+        for (let k = 0; k < b.n; k++) {
+          const j = all.next();
+          all.m.set(b.m.subarray(k * 16, k * 16 + 16), j * 16);
+          all.c.set(b.c.subarray(k * 4, k * 4 + 4), j * 4);
+        }
+      }
+      setInstances(this.nature.get(id)!, all);
+    }
+  }
+
+  /** Trees in detail near the camera, as stand-ins farther away (call every frame; see TreeLod.update). */
+  updateView(cam: Vector3, target: Vector3, shadowR: number): void {
+    this.treeLod.update(cam, target, shadowR);
   }
 }

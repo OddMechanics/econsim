@@ -15,13 +15,17 @@ import { BUILDINGS, invWeight } from '../sim/goods';
 import { FLOOR_H, stationsOf } from '../sim/layout';
 import type { Simulation } from '../sim/sim';
 import type { Building, Person } from '../sim/types';
+import { GATE } from '../sim/types';
 import { heightAt, inGrid } from '../sim/world';
 import { BuildingRenderer, standHeight, type BuildingLook } from './buildings';
 import { AdRenderer } from './ads';
 import { clothColor } from './palette';
 import { PeopleRenderer, type PersonVisual } from './people';
 import { ROAD_SURFACE, RoadRenderer } from './roads';
-import { TerrainRenderer, type Field } from './terrain';
+import { TerrainRenderer } from './terrain';
+import { CountryNature } from './countryNature';
+import { FieldRenderer } from './fields';
+import { drapedLot } from './farmLayout';
 import { VehicleRenderer, type VehicleVisual } from './vehicles';
 import { CameraController, type CameraMode, type Subject } from './camera';
 
@@ -68,6 +72,10 @@ export class WorldRenderer {
   private shadows: ShadowGenerator;
   private glow: GlowLayer;
   private terrain: TerrainRenderer;
+  /** Trees and boulders out in the countryside. */
+  private country: CountryNature;
+  /** Crops, pastures, fences, herds and tractors on the countryside's farms. */
+  private fields: FieldRenderer;
   private roads: RoadRenderer;
   private buildings: BuildingRenderer;
   private ads: AdRenderer;
@@ -82,6 +90,8 @@ export class WorldRenderer {
   private personVisuals: PersonVisual[] = [];
   private vehicleVisuals: VehicleVisual[] = [];
   nightLevel = 0;
+  /** Height of the drawn ground at a point (for buildings standing on unleveled countryside ground). */
+  private readonly groundFn = (x: number, y: number): number => this.terrain.groundY(x, y);
   /** Smoothed milliseconds per frame spent in each part (for tuning; see window.__econsim). */
   perf: Record<string, number> = {};
 
@@ -116,6 +126,9 @@ export class WorldRenderer {
     this.glow.intensity = 0;
 
     this.terrain = new TerrainRenderer(scene, this.shadows, sim.state.world);
+    this.country = new CountryNature(scene, this.shadows, (x, y) => this.terrain.groundY(x, y), (x, y) => this.terrain.natureKind(x, y));
+    this.country.setWorld(sim.state.world, this.terrain.noiseSeed);
+    this.fields = new FieldRenderer(scene, this.shadows);
     this.roads = new RoadRenderer(scene, this.shadows);
     this.buildings = new BuildingRenderer(scene, this.shadows);
     this.ads = this.makeAds();
@@ -157,25 +170,14 @@ export class WorldRenderer {
     return ads;
   }
 
-  /** The countryside's farm lots and what grows on them (for the ground's colors). */
-  private countryFields(): Field[] {
-    const s = this.sim.state, w = s.world;
-    const out: Field[] = [];
-    for (const l of s.roads.lots) {
-      if (l.zone !== 'rural' || inGrid(w, l.x, l.y)) continue;
-      const b = l.building >= 0 ? this.sim.ctx.bById.get(l.building) : undefined;
-      const kind = !b ? (l.w > 100 ? 'fallow' : '') : b.kind === 'farm' || b.kind === 'vegfarm' || b.kind === 'dairyfarm' || b.kind === 'ranch' ? b.kind : 'yard';
-      if (kind) out.push({ x: l.x, y: l.y, angle: l.angle, w: l.w, d: l.d, kind, look: l.id % 7 });
-    }
-    return out;
-  }
-
   /** Swap in a different simulation (new world or loaded save). */
   setSim(sim: Simulation): void {
     this.sim = sim;
     this.selection = null;
     this.cutaway = null;
     this.terrain.setWorld(sim.state.world);
+    this.country.setWorld(sim.state.world, this.terrain.noiseSeed);
+    this.clock.fields = 99;
     this.roads.dispose();
     this.roads = new RoadRenderer(this.scene, this.shadows);
     this.buildings.dispose();
@@ -215,8 +217,14 @@ export class WorldRenderer {
     }
     if ((this.clock.fields += dtReal) > 3) {
       this.clock.fields = 0;
-      this.terrain.setFields(this.countryFields());
+      this.country.sync(s.roads, this.sim.ctx.nodeById, s.roads.lots);
+      this.fields.sync(s.buildings, this.sim.ctx.lotById, this.terrain.surface, s.world);
     }
+    this.fields.update(this.camera.position);
+    // (the shadow map covers this far around the camera's target; see updateLighting)
+    const shadowR = this.scene.shadowsEnabled ? this.sun.shadowFrustumSize * 0.75 : 0;
+    this.country.update(this.camera.position, this.camera.target, shadowR);
+    this.terrain.updateView(this.camera.position, this.camera.target, shadowR);
     mark('nature');
     if (this.clock.roads > 0.5) {
       this.clock.roads = 0;
@@ -257,9 +265,12 @@ export class WorldRenderer {
     // what the sign says: the company, the government, the channel or the website
     const name = b.kind === 'cityhall' && gov ? gov.name
       : firm?.channel ? firm.channel.name : firm?.site ? firm.site.name : firm?.name;
+    const lotZ = lot ? (lot.x - b.x) * Math.cos(b.angle) + (lot.y - b.y) * Math.sin(b.angle) : 0;
+    const draped = !!lot && drapedLot(b.kind, lot.w, lot.d, !inGrid(this.sim.state.world, lot.x, lot.y));
     return {
       lotW: lot?.w ?? b.w + 4,
       lotD: lot?.d ?? b.d + 4,
+      lotZ, draped, terrain: draped ? this.groundFn : undefined,
       ground: heightAt(this.sim.state.world, b.x, b.y),
       firmName: name,
       firmHue: gov ? gov.hue : firm?.site ? firm.site.color : firm?.hue,
@@ -433,6 +444,8 @@ export class WorldRenderer {
     const selId = this.selection?.type === 'person' ? this.selection.id : -1;
     for (const p of this.sim.state.people) {
       if (p.driving >= 0) continue; // drawn in the vehicle
+      // away at the regional hospital outside the map (parked at the far gate meanwhile): not drawn
+      if (p.ill?.admitted === GATE || p.task?.steps[p.task.i]?.k === 'away') continue;
       let z = 0;
       const x = p.px + (p.x - p.px) * alpha, y = p.py + (p.y - p.py) * alpha;
       if (p.inside >= 0) {

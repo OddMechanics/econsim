@@ -25,6 +25,15 @@ export interface BuildingLook {
   ownerColor?: Color3 | null; // ownership overlay marker
   /** TV studios: the "ON AIR" light is lit while a broadcast is running. */
   live?: boolean;
+  /** The lot center's local z (the building stands toward the lot's front: usually negative). */
+  lotZ?: number;
+  /**
+   * The lot's ground is drawn by the field renderer, laid on the terrain (countryside farms and farmhouses,
+   * whose lots aren't leveled): don't draw a flat lot slab.
+   */
+  draped?: boolean;
+  /** Height of the drawn ground at a world point (sim x, y), for things standing around on unleveled ground. */
+  terrain?: (x: number, y: number) => number;
 }
 
 /** A unit inside a tower (a shop on the ground floor, a leased office floor), in the tower's local frame. */
@@ -38,8 +47,12 @@ export interface HostedUnit {
 
 export type PaneKind = 'res' | 'shop' | 'ind' | 'off' | 'lobby' | 'none';
 
-/** Sign looks: brand color panel, carved stone lettering, a lit / unlit "ON AIR" box, a "FOR LEASE" board, metal letters on stone. */
-export type SignStyle = 'brand' | 'carved' | 'onair' | 'offair' | 'lease' | 'metal';
+/**
+ * Sign looks: brand color panel, carved stone lettering, a lit / unlit "ON AIR" box, a "FOR LEASE" board, metal letters on stone,
+ * a hospital's white "H" on blue, a medical practice's name beside a heart pictogram, a red "EMERGENCY" band.
+ * (Never a red cross: it's a protected emblem.)
+ */
+export type SignStyle = 'brand' | 'carved' | 'onair' | 'offair' | 'lease' | 'metal' | 'hospital' | 'medical' | 'emergency';
 export interface SignPart { geo: Geo; text: string; hue: number; aspect: number; style: SignStyle; owner: number }
 
 /** Part of a mesh (a range of its triangles) that picks as another building: a shop in a tower's podium. */
@@ -530,6 +543,7 @@ export function smallCrane(c: Ctx, x: number, z: number, h: number, jib: number,
 export type Ground = 'lawn' | 'paved' | 'gravel' | 'dirt' | 'plaza' | 'clay' | 'meadow';
 
 export function lotGround(c: Ctx, kind: Ground): void {
+  if (c.look.draped) return; // (laid on the terrain by the field renderer)
   const col = kind === 'lawn' ? hsl(0.26 + c.r(60) * 0.04, 0.36, 0.42 + c.r(61) * 0.05)
     : kind === 'meadow' ? hsl(0.24, 0.32, 0.45)
     : kind === 'paved' ? C.paving : kind === 'gravel' ? C.gravel : kind === 'dirt' ? C.dirt : kind === 'clay' ? hx('#b49a78') : C.plaza;

@@ -37,6 +37,10 @@ import {
   adco, brickworks, carplant, cementworks, claypit, depot, electronics, foodplant, furniturePlant, glassworks, lumberyard, sawmill, steelmill, textile, workshop,
 } from './industry';
 import { house, restaurant, store } from './lowrise';
+import { farmhouse, farmyard } from './farms';
+import { bakery, dairyplant, meatplant } from './foodplants';
+import { clinic, hospital } from './health';
+import { isFieldLot } from './farmLayout';
 import { apartments, bankBlock, officeBlock } from './midrise';
 import { isTowerKind, tower, towerBeacons, towerPlan, towerRuin, towerSite } from './towers';
 
@@ -1318,15 +1322,20 @@ function netco(c: Ctx): void {
 
 // ================================================================ dispatch
 
+/** A farm on a countryside field lot is its farmyard (farms.ts); on a city-sized rural lot, the compact farmstead. */
+function farmOrYard(c: Ctx): void {
+  if (c.look.draped && isFieldLot(c.lw, c.ld)) farmyard(c);
+  else farm(c);
+}
+
 const BUILDERS: Record<BuildingKind, (c: Ctx) => void> = {
-  plaza, park, trailer, house, farmhouse: house, apartments, tower, officetower: tower,
-  farm, lumberyard, quarry, claypit, mine,
+  plaza, park, trailer, house, farmhouse, apartments, tower, officetower: tower,
+  farm: farmOrYard, lumberyard, quarry, claypit, mine,
   sawmill, brickworks, steelmill, cementworks, glassworks, foodplant,
-  // (new farm and food-plant kinds use the farm and food-plant looks until they get their own)
-  vegfarm: farm, dairyfarm: farm, ranch: farm, bakery: foodplant, dairyplant: foodplant, meatplant: foodplant,
+  vegfarm: farmOrYard, dairyfarm: farmOrYard, ranch: farmOrYard, bakery, dairyplant, meatplant,
   workshop, furniture: furniturePlant, textile, electronics, carplant,
   store, dealer, restaurant, office: officeBlock, depot, yard: constructionYard, bank: bankBlock, adco,
-  clinic: officeBlock, hospital: officeBlock, // (placeholders until they get their own looks)
+  clinic, hospital,
   cityhall, studio, netco,
   shopfront: () => {}, suite: () => {}, // drawn by their tower
 };
@@ -1334,6 +1343,11 @@ const BUILDERS: Record<BuildingKind, (c: Ctx) => void> = {
 function generate(c: Ctx): void {
   const b = c.b;
   const towerKind = isTowerKind(b.kind);
+  // a farm's building site or ruin on a countryside field lot: just the ground around the building (not the whole field)
+  if ((b.ruined || !b.built) && c.look.draped && isFieldLot(c.lw, c.ld)) {
+    c.lw = Math.min(c.lw, b.w + 16);
+    c.ld = Math.min(c.ld, b.d + 12);
+  }
   if (b.ruined) (towerKind ? towerRuin : ruin)(c);
   else if (!b.built) {
     if (towerKind) towerSite(c, towerPlan(b, c.look.firmName), progressOf(b), deliveredOf(b));
@@ -1481,7 +1495,7 @@ function occupancy(b: Building): number {
   return Math.round((k / n) * 10);
 }
 
-function drawSignTexture(tex: DynamicTexture, text: string, hue: number, style: SignStyle): void {
+function drawSignTexture(tex: DynamicTexture, text: string, hue: number, style: SignStyle, aspect = 4): void {
   const ctx = tex.getContext() as unknown as CanvasRenderingContext2D;
   const { width: W, height: H } = tex.getSize();
   ctx.textAlign = 'center';
@@ -1515,6 +1529,56 @@ function drawSignTexture(tex: DynamicTexture, text: string, hue: number, style: 
     grad.addColorStop(0, '#f4f4f2'); grad.addColorStop(0.5, '#b9bcc0'); grad.addColorStop(1, '#e8e8e6');
     ctx.fillStyle = grad;
     ctx.fillText(label, W / 2, H / 2 + size * 0.04);
+    tex.update(true);
+    return;
+  }
+  if (style === 'hospital') {
+    // a white "H" on blue, drawn round whatever the texture's proportions
+    ctx.fillStyle = '#1f5fae';
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(W / H / aspect, 1);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = H * 0.05;
+    ctx.strokeRect(-H * aspect * 0.42, -H * 0.42, H * aspect * 0.84, H * 0.84);
+    ctx.font = `800 ${Math.floor(H * 0.72)}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, 0, H * 0.04);
+    ctx.restore();
+    tex.update(true);
+    return;
+  }
+  if (style === 'medical' || style === 'emergency') {
+    const er = style === 'emergency';
+    ctx.fillStyle = er ? '#c8262c' : '#f7f8f6';
+    ctx.fillRect(0, 0, W, H);
+    let x0 = 0;
+    if (!er) {
+      // a teal tile with a white heart, then the name in teal
+      const s = H * 0.8, sx = W / H / aspect; // (keep the tile square on the sign)
+      ctx.save();
+      ctx.translate(H * 0.1 * sx, H * 0.1);
+      ctx.scale(sx, 1);
+      ctx.fillStyle = '#12827f';
+      ctx.fillRect(0, 0, s, s);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      const cx = s / 2, cy = s * 0.47, r = s * 0.17;
+      ctx.moveTo(cx, cy + s * 0.28);
+      ctx.bezierCurveTo(cx - s * 0.42, cy, cx - r * 1.6, cy - r * 2.2, cx, cy - r * 0.6);
+      ctx.bezierCurveTo(cx + r * 1.6, cy - r * 2.2, cx + s * 0.42, cy, cx, cy + s * 0.28);
+      ctx.fill();
+      ctx.restore();
+      x0 = H * sx;
+    }
+    ctx.textAlign = 'center';
+    let size = Math.floor(H * 0.52);
+    const font = (k: number) => `bold ${k}px "Avenir Next", "Helvetica Neue", Arial, sans-serif`;
+    ctx.font = font(size);
+    while (ctx.measureText(text).width > (W - x0) * 0.88 && size > 8) { size -= 2; ctx.font = font(size); }
+    ctx.fillStyle = er ? '#ffffff' : '#12625f';
+    ctx.fillText(er ? text.toUpperCase() : text, x0 + (W - x0) / 2, H / 2 + size * 0.05);
     tex.update(true);
     return;
   }
@@ -2265,6 +2329,8 @@ export class BuildingRenderer {
     if (style === 'onair') return new Color3(1, 1, 1);
     if (style === 'carved' || style === 'metal') { const k = 0.05 + this.night * 0.4; return new Color3(k, k, k); }
     if (style === 'lease') { const k = 0.06 + this.night * 0.25; return new Color3(k, k, k); }
+    // (these glow in their own colors: the emissive is the sign's picture times this)
+    if (style === 'hospital' || style === 'medical' || style === 'emergency') { const k = 0.15 + this.night * 0.75; return new Color3(k, k, k); }
     const k = 0.08 + this.night * 0.85;
     return new Color3(k, k, k);
   }
@@ -2277,9 +2343,10 @@ export class BuildingRenderer {
       tex.wrapU = Texture.CLAMP_ADDRESSMODE;
       tex.wrapV = Texture.CLAMP_ADDRESSMODE;
       tex.anisotropicFilteringLevel = 8;
-      drawSignTexture(tex, text, hue, style);
+      drawSignTexture(tex, text, hue, style, aspect);
       const mat = new StandardMaterial(`signm:${key}`, this.scene);
       mat.diffuseTexture = tex;
+      if (style === 'hospital' || style === 'medical' || style === 'emergency') mat.emissiveTexture = tex;
       mat.specularColor = new Color3(0.05, 0.05, 0.05);
       s = { mat, tex, refs: 0, style };
       mat.emissiveColor = this.signGlow(style);

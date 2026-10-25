@@ -318,3 +318,9 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   (+ call in sick), firms staffing/prices/chains (CityCare, Mercy Health; doctors brought in), newcomers can be doctors/nurses,
   council motions health/hospital, founding charter sets healthcare, stats sick/patients + Health chart, person panel illness.
   Fixed maxFloorsAt cell lookup and a redistrict crash.
+- Countryside & health visuals (stage C, helper): natureKit/countryNature (TreeLod: detailed trees near the camera,
+  cheap stand-ins far; countryside woods and rocks from kindAt), fields.ts (fields, farmyards and lawns cut from the
+  outer ground mesh: crops, rows, fenced pastures with CC0 cows/sheep, hedgerows, tractors, ambulances), farms.ts (four
+  farmyard looks + farmhouse), foodplants.ts, health.ts (clinic, hospital with H signs and emergency bay), seamless
+  grid edge in terrain.ts; people away at the regional hospital aren't drawn. Assets: public/models/country (Quaternius
+  farm animals, Kenney car + nature kits, all CC0; LICENSE.txt). Frame times measured equal or lower in every view.

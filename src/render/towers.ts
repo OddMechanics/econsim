@@ -634,6 +634,11 @@ function shopFront(uc: Ctx, p: TowerPlan, x0: number, x1: number, u: HostedUnit,
     uc.screen.box(x0 + 0.9, 1.45, 0.17, 0.32, 0.22, 0.02, hx('#9fd0ff'));
     return;
   }
+  if (kind === 'clinic') {
+    // a doctors' practice: its name beside the heart pictogram on a white panel (health.ts)
+    uc.sign(name ?? 'Clinic', xc, 2.68, Math.min(w - 0.8, 5.5), 0.4, 0.16, null, 'medical');
+    return;
+  }
   // a store: a slim metal canopy and the name on the fascia
   if (uc.r(52) < 0.6) g.box(xc, 2.55, Math.min(1.1, yard - 0.3) / 2 + 0.06, w - 0.2, 0.08, Math.min(1.1, yard - 0.3), C.dark, 0, true);
   uc.sign(name, xc, 2.68, Math.min(w - 0.8, 5.5), 0.4, 0.16, null);

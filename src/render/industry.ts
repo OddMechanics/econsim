@@ -33,6 +33,8 @@ export function hallLook(kind: string, seed: number, floors: number): { wall: Co
     case 'textile': return { wall: pick(['#e6e2d8', '#dfe3e6', '#c9ced3', '#d9d2c4']), H: Math.max(1, floors) * 4.2, office: true, storeys: Math.max(1, floors) };
     case 'electronics': return { wall: hx('#f2f2ee'), H: Math.max(1, floors) * 4.0, office: true, storeys: Math.max(1, floors) };
     case 'carplant': return { wall: pick(['#dfe3e6', '#c9ced3', '#e6e2d8']), H: 9.0, office: true, storeys: 1 };
+    case 'dairyplant': return { wall: hx('#f4f5f3'), H: 7.0, office: true, storeys: 1 };
+    case 'meatplant': return { wall: hx('#d9dcdc'), H: 6.4, office: true, storeys: 1 };
     case 'depot': return { wall: pick(['#c9c2b0', '#7d8fa0', '#dfe3e6', '#9aa88f', '#5d6670']), H: 7.0, office: false, storeys: 1 };
     default: return { wall: hx(METALS[Math.floor(hash2(seed, 701) * METALS.length)]), H: 5.6, office: false, storeys: 1 };
   }

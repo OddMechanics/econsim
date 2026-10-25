@@ -1,0 +1,44 @@
+Countryside models (country.glb)
+================================
+
+country.glb holds six small low-poly models, each one mesh of flat-shaded,
+vertex-colored triangles in meters (standing on y = 0, facing +Z). They are
+converted, scaled and (where noted) recolored from free asset packs released
+under CC0 1.0 Universal (public domain dedication):
+
+  model      source                                                   changes
+  ---------  -------------------------------------------------------  ------------------------------------------
+  cow        Quaternius, "LowPoly Animated Farm Animal Pack" (2018),   OBJ -> vertex colors from its materials,
+             OBJ/Cow.obj                                               static (no rig), scaled to 2.4 m long
+  sheep      same pack, OBJ/Sheep.obj                                  same, scaled to 1.3 m long
+  tractor    Kenney, "Car Kit" 3.1 (2026-04-02), GLB/tractor.glb       colormap texture baked to vertex colors,
+                                                                       scaled to 3.9 m long
+  ambulance  Kenney, "Car Kit" 3.1, GLB/ambulance.glb                  same, scaled to 5.4 m long
+  fence      Kenney, "Nature Kit" 2.1 (2020-04-29), fence_simple.glb   scaled to a 3 m x 1.1 m section
+  hedge      Kenney, "Nature Kit" 2.1, plant_bushLarge.glb             recolored mint -> hedge green, 2.2 m wide
+
+Sources (official pages; each lists the CC0 license; checked 2026-10-24):
+- Quaternius Farm Animal Pack: https://opengameart.org/content/lowpoly-animated-farm-animal-pack
+  (download "Farm Animals by @Quaternius.zip"; its License.txt: "CC0 1.0 Universal (CC0 1.0) Public
+  Domain Dedication"). Also https://quaternius.com
+- Kenney Car Kit: https://kenney.nl/assets/car-kit (kenney_car-kit.zip; License.txt: "Creative Commons
+  Zero, CC0")
+- Kenney Nature Kit: https://kenney.nl/assets/nature-kit (kenney_nature-kit.zip; License.txt: "Creative
+  Commons Zero, CC0")
+
+CC0 1.0 Universal summary (full legal code:
+https://creativecommons.org/publicdomain/zero/1.0/legalcode):
+
+  The person who associated a work with this deed has dedicated the work to
+  the public domain by waiving all of his or her rights to the work worldwide
+  under copyright law, including all related and neighboring rights, to the
+  extent allowed by law. You can copy, modify, distribute and perform the
+  work, even for commercial purposes, all without asking permission.
+
+No attribution is required, but thanks to Quaternius (https://www.patreon.com/quaternius)
+and Kenney (https://kenney.nl) for making these free.
+
+How the file is made: scripts/build_country.py in the project (run it with the three
+unzipped downloads; see its docstring). COLOR_0 holds linear colors as glTF
+asks; the game converts them to display colors when it loads the file
+(src/render/countryModels.ts).
