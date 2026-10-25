@@ -16,12 +16,18 @@ export interface GoodDef {
 }
 
 export const GOOD: Record<Good, GoodDef> = {
-  crops: { label: 'crops', weight: 0.5, laborGuess: 0.4 },
+  crops: { label: 'grain', weight: 0.5, laborGuess: 0.4 },
+  produce: { label: 'fruit & vegetables', weight: 0.5, laborGuess: 0.5, nutrition: 24, joy: 6 },
+  milk: { label: 'milk', weight: 1, laborGuess: 0.35 },
+  livestock: { label: 'livestock', weight: 2, laborGuess: 1.6 },
   wood: { label: 'wood', weight: 3, laborGuess: 0.4 },
   stone: { label: 'stone', weight: 4, laborGuess: 0.6 },
   clay: { label: 'clay', weight: 3, laborGuess: 0.5 },
   ore: { label: 'ore', weight: 4, laborGuess: 1 },
-  groceries: { label: 'groceries', weight: 0.5, laborGuess: 0.6, nutrition: 34, joy: 6 },
+  groceries: { label: 'groceries', weight: 0.5, laborGuess: 0.6, nutrition: 34, joy: 5 },
+  bread: { label: 'bread', weight: 0.4, laborGuess: 0.5, nutrition: 30, joy: 4 },
+  dairy: { label: 'dairy', weight: 0.6, laborGuess: 0.6, nutrition: 28, joy: 7 },
+  meat: { label: 'meat', weight: 0.6, laborGuess: 1.4, nutrition: 42, joy: 9 },
   planks: { label: 'planks', weight: 1.5, laborGuess: 0.6 },
   bricks: { label: 'bricks', weight: 2, laborGuess: 0.6 },
   steel: { label: 'steel', weight: 3, laborGuess: 2.5 },
@@ -34,11 +40,32 @@ export const GOOD: Record<Good, GoodDef> = {
   cars: { label: 'cars', weight: 0, laborGuess: 90, lifeDays: 400 },
 };
 
-/** What people eat at home (raw crops go to food plants; nobody lives on berries). */
-export const EDIBLE: Good[] = ['groceries'];
+/** What people eat (raw farm goods go to bakeries, dairies, meat plants and food plants first; fruit and vegetables are sold fresh). */
+export const EDIBLE: Good[] = ['groceries', 'bread', 'produce', 'dairy', 'meat'];
+/** How much of a day's portion each food spoils (fresh food quickly, packaged groceries and grain slowly). */
+export const SPOIL: Partial<Record<Good, number>> = { crops: 0.01, produce: 0.06, milk: 0.12, groceries: 0.02, bread: 0.12, dairy: 0.05, meat: 0.06 };
+/** Total food units in an inventory. */
+export function foodIn(inv: Inventory): number {
+  let n = 0;
+  for (const g of EDIBLE) n += inv[g] ?? 0;
+  return n;
+}
+/** Take food units from an inventory (a restaurant cooking): the most plentiful first. Returns what it got. */
+export function takeFood(inv: Inventory, amount: number): number {
+  let left = amount;
+  for (let k = 0; k < EDIBLE.length && left > 1e-6; k++) {
+    let best: Good | null = null;
+    for (const g of EDIBLE) if ((inv[g] ?? 0) > 0.05 && (!best || inv[g] > inv[best])) best = g;
+    if (!best) break;
+    const t = Math.min(left, inv[best]);
+    inv[best] -= t;
+    left -= t;
+  }
+  return amount - left;
+}
 export const DURABLES: Good[] = ['clothes', 'furniture', 'computers', 'tools', 'cars'];
 /** What stores sell to consumers (cars are sold by dealers). */
-export const RETAIL_GOODS: Good[] = ['groceries', 'clothes', 'furniture', 'tools', 'computers'];
+export const RETAIL_GOODS: Good[] = ['groceries', 'bread', 'produce', 'dairy', 'meat', 'clothes', 'furniture', 'tools', 'computers'];
 /** Building materials (what construction sites order). */
 export const MATERIALS: Good[] = ['planks', 'bricks', 'steel', 'concrete', 'glass', 'wood', 'stone'];
 
@@ -193,6 +220,24 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     jobs: [{ role: 'farmhand', slots: 6 }], recipe: { inputs: {}, outputs: { crops: 8 }, toolBoost: 1.4 }, output: 'crops',
     hours: h(7, 15), minFunds: 30,
   },
+  vegfarm: {
+    label: 'Vegetable farm', category: 'primary', zones: ['rural'], w: 14, d: 10, floors: [1, 1],
+    materials: { planks: 10, concrete: 6, steel: 2, glass: 4 }, workHours: 14, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
+    jobs: [{ role: 'farmhand', slots: 6 }], recipe: { inputs: {}, outputs: { produce: 7 }, toolBoost: 1.4 }, output: 'produce',
+    hours: h(6, 14), minFunds: 30,
+  },
+  dairyfarm: {
+    label: 'Dairy farm', category: 'primary', zones: ['rural'], w: 16, d: 10, floors: [1, 1],
+    materials: { planks: 12, concrete: 10, steel: 3 }, workHours: 16, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
+    jobs: [{ role: 'farmhand', slots: 4 }], recipe: { inputs: {}, outputs: { milk: 9 }, toolBoost: 1.3 }, output: 'milk',
+    hours: h(5, 13), minFunds: 40,
+  },
+  ranch: {
+    label: 'Livestock farm', category: 'primary', zones: ['rural'], w: 16, d: 10, floors: [1, 1],
+    materials: { planks: 12, concrete: 8, steel: 3 }, workHours: 16, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
+    jobs: [{ role: 'farmhand', slots: 4 }], recipe: { inputs: { crops: 1 }, outputs: { livestock: 2.2 }, toolBoost: 1.2 }, output: 'livestock',
+    hours: h(6, 14), minFunds: 40,
+  },
   lumberyard: {
     label: 'Logging company', category: 'primary', zones: ['rural', 'industrial'], w: 14, d: 12, floors: [1, 1],
     materials: { planks: 8, concrete: 6 }, workHours: 10, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
@@ -248,6 +293,24 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     materials: { concrete: 18, steel: 6, glass: 2 }, workHours: 24, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
     jobs: [{ role: 'worker', slots: 10 }, { role: 'sales', slots: 1 }], recipe: { inputs: { crops: 4 }, outputs: { groceries: 6 }, toolBoost: 1.2 },
     output: 'groceries', hours: h(7, 15), minFunds: 60,
+  },
+  bakery: {
+    label: 'Bakery', category: 'industry', zones: ['industrial', 'urban'], w: 14, d: 12, floors: [1, 1],
+    materials: { concrete: 12, bricks: 8, steel: 3, glass: 2 }, workHours: 18, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
+    jobs: [{ role: 'worker', slots: 6 }, { role: 'sales', slots: 1 }], recipe: { inputs: { crops: 3 }, outputs: { bread: 5 }, toolBoost: 1.2 },
+    output: 'bread', hours: h(4, 12), minFunds: 50,
+  },
+  dairyplant: {
+    label: 'Dairy', category: 'industry', zones: ['industrial', 'urban'], w: 16, d: 14, floors: [1, 1],
+    materials: { concrete: 16, steel: 6, glass: 2 }, workHours: 22, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
+    jobs: [{ role: 'worker', slots: 6 }, { role: 'sales', slots: 1 }], recipe: { inputs: { milk: 5 }, outputs: { dairy: 4 }, toolBoost: 1.2 },
+    output: 'dairy', hours: h(6, 14), minFunds: 60,
+  },
+  meatplant: {
+    label: 'Meat plant', category: 'industry', zones: ['industrial'], w: 18, d: 14, floors: [1, 1],
+    materials: { concrete: 18, steel: 7, glass: 1 }, workHours: 24, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.002,
+    jobs: [{ role: 'worker', slots: 8 }, { role: 'sales', slots: 1 }], recipe: { inputs: { livestock: 2 }, outputs: { meat: 3 }, toolBoost: 1.2 },
+    output: 'meat', hours: h(6, 14), minFunds: 60,
   },
   workshop: {
     label: 'Tool factory', category: 'industry', zones: ['industrial', 'urban'], w: 14, d: 12, floors: [1, 1],

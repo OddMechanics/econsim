@@ -253,7 +253,8 @@ export function recordDaily(ctx: Ctx): void {
   const rent = averageRent(ctx);
   // a typical day's basket: food, a little of the things people buy, and a day's rent
   const shelfOr = (g: Good) => markets[g]?.retail ?? refPrice(ctx, g) * 1.45;
-  const cpi = 2 * shelfOr('groceries') + 0.05 * shelfOr('clothes') + 0.02 * shelfOr('furniture') + 0.01 * shelfOr('computers') + rent;
+  const cpi = 0.6 * shelfOr('groceries') + 0.4 * shelfOr('bread') + 0.4 * shelfOr('produce') + 0.3 * shelfOr('dairy') + 0.3 * shelfOr('meat')
+    + 0.05 * shelfOr('clothes') + 0.02 * shelfOr('furniture') + 0.01 * shelfOr('computers') + rent;
   // government: what was booked during the day
   const g = mainPolity(ctx);
   const today = dayOf(s.tick);

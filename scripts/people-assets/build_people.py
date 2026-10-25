@@ -8,10 +8,11 @@ three clips).
   modular rig are both bound in the same T-pose, so world-rotation deltas from
   either transfer as is. Joints are flat in the GLB (named after the joint);
   the runtime builds its own hierarchy.
-- Parts: the mannequin split by dominant bone into head / body / legs / feet,
-  each in a few clothing variants painted per triangle (TEXCOORD_0.u = palette
-  slot). The knuckle spheres are swapped for low-poly ones (they were half the
-  triangles). Welded, no normals: the runtime flat-shades.
+- Parts: the mannequin is slimmed to a neutral build, then each of its pieces
+  is simplified to about a tenth of its triangles (~1,000 per person; the finger
+  joint balls are dropped), then split by dominant bone into head / body / legs /
+  feet, each in a few clothing variants painted per triangle (TEXCOORD_0.u =
+  palette slot). Welded, no normals: the runtime flat-shades.
 - Animations: retargeted to the mannequin (world-rotation deltas), sampled at
   30 fps, int16 quaternions, written to a small custom binary.
 
@@ -94,24 +95,23 @@ print('rig: hips %.3f head %.3f' % (TP[JI['UpperLeg.L']][1], TP[JI['Head']][1]))
 # ------------------------------------------------------------------ mannequin mesh
 node = [n for n in gu.nodes if 'mesh' in n][0]
 mesh = gu.j['meshes'][node['mesh']]
-Ps, Js, Ws, Is = [], [], [], []
+Ps, Js, Ws, Is, Rs = [], [], [], [], []
 base = 0
-knuckles = []  # (vertex ids) of the hand joint spheres
 for p in mesh['primitives']:
     P = gu.acc(p['attributes']['POSITION'])
     J = gu.acc(p['attributes']['JOINTS_0']).astype(np.int64)
     W = gu.acc(p['attributes']['WEIGHTS_0'])
     I = gu.acc(p['indices'])[:, 0].astype(np.int64)
     Ps.append(P); Js.append(J); Ws.append(W); Is.append(I + base)
-    if 'Joint' in gu.j['materials'][p['material']]['name']:
-        knuckles.append((base, len(P), I + base))
+    Rs.append(np.full(len(P), 'Joint' in gu.j['materials'][p['material']]['name']))  # joint balls/rings
     base += len(P)
-P = np.vstack(Ps); J = np.vstack(Js); W = np.vstack(Ws); I = np.concatenate(Is)
+P = np.vstack(Ps); J = np.vstack(Js); W = np.vstack(Ws); I = np.concatenate(Is); RING = np.concatenate(Rs)
 W = np.where(W < 0.004, 0, W)
 W = W / W.sum(1, keepdims=True)
 OJ = np.array([[JI[SKIN_MAP[UN[j]]] for j in row] for row in J])
 DOM = np.array([UN[J[v, np.argmax(W[v])]] for v in range(len(P))])  # dominant UAL bone per vertex
 TRI = I.reshape(-1, 3)
+print('mannequin: %d tris, height %.3f' % (len(TRI), P[:, 1].max()))
 
 def is_hand(b):
     return 'DEF-hand' in b or 'DEF-f_' in b or 'DEF-thumb' in b
@@ -140,55 +140,123 @@ def slim(P, J, W):
     return out
 P = slim(P, J, W)
 
-# knuckles: connected pieces of the joint material on the fingers -> icosahedra
-ICO_V = np.array([[-1, 1.618, 0], [1, 1.618, 0], [-1, -1.618, 0], [1, -1.618, 0], [0, -1, 1.618], [0, 1, 1.618],
-                  [0, -1, -1.618], [0, 1, -1.618], [1.618, 0, -1], [1.618, 0, 1], [-1.618, 0, -1], [-1.618, 0, 1]])
-ICO_V = ICO_V / np.linalg.norm(ICO_V, axis=1, keepdims=True)
-ICO_F = np.array([[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6],
-                  [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10],
-                  [8, 6, 7], [9, 8, 1]])
-drop = np.zeros(len(TRI), bool)
-newP, newJ, newW, newT = [], [], [], []
+# pieces: the mannequin is built like an artist's figure, one closed piece per
+# body segment plus joint balls between them. Weld split seams (same position)
+# and find the connected pieces.
+key = {}
+weld = np.arange(len(P))
+for v, q in enumerate(map(tuple, np.round(P, 5))):
+    weld[v] = key.setdefault((q, RING[v]), v)
+TRI = weld[TRI]
+TRI = TRI[(TRI[:, 0] != TRI[:, 1]) & (TRI[:, 1] != TRI[:, 2]) & (TRI[:, 0] != TRI[:, 2])]
 par = np.arange(len(P))
 def root(a):
     while par[a] != a:
         par[a] = par[par[a]]; a = par[a]
     return a
-for b0, n, Ik in knuckles:
-    for t in Ik.reshape(-1, 3):
-        for a, b in ((t[0], t[1]), (t[1], t[2])):
-            ra, rb = root(a), root(b)
-            if ra != rb: par[ra] = rb
-    seen = {}
-    for v in range(b0, b0 + n):  # same position = same piece (split seams)
-        k = tuple(np.round(P[v], 5))
-        if k in seen:
-            ra, rb = root(v), root(seen[k])
-            if ra != rb: par[ra] = rb
-        else:
-            seen[k] = v
-tri_root = np.array([root(t[0]) for t in TRI])
-kn_mask = np.zeros(len(P), bool)
-for b0, n, _ in knuckles: kn_mask[b0:b0 + n] = True
+for t in TRI:
+    for a, b in ((t[0], t[1]), (t[1], t[2])):
+        ra, rb = root(a), root(b)
+        if ra != rb: par[ra] = rb
 pieces = {}
-for t in np.where(kn_mask[TRI[:, 0]])[0]:
-    pieces.setdefault(tri_root[t], []).append(t)
+for i, t in enumerate(TRI):
+    pieces.setdefault(root(t[0]), []).append(i)
+
+def decimate(tris, target):
+    """Quadric-error edge collapses on one piece down to ~target triangles. Each
+    collapse moves a vertex onto a neighbour, so the surviving vertices keep their
+    exact positions and skin weights. Vertices on open edges (where a piece tucks
+    under a joint ball) never move, and collapses that fold or flip faces are skipped."""
+    import heapq
+    tris = [list(t) for t in tris]
+    alive = [True] * len(tris)
+    vf = {}
+    for i, t in enumerate(tris):
+        for v in t: vf.setdefault(v, set()).add(i)
+    edges = {}
+    for t in tris:
+        for k in range(3):
+            e = (min(t[k], t[(k + 1) % 3]), max(t[k], t[(k + 1) % 3]))
+            edges[e] = edges.get(e, 0) + 1
+    fixed = {v for e, n in edges.items() if n == 1 for v in e}
+    Q = {v: np.zeros((4, 4)) for v in vf}
+    for t in tris:
+        n = np.cross(P[t[1]] - P[t[0]], P[t[2]] - P[t[0]])
+        area = np.linalg.norm(n)
+        if area < 1e-12: continue
+        n = n / area
+        pl = np.append(n, -n @ P[t[0]])
+        for v in t: Q[v] += np.outer(pl, pl) * area
+    def cost(a, b):  # collapse a onto b
+        h = np.append(P[b], 1.0)
+        return h @ (Q[a] + Q[b]) @ h
+    ver = {v: 0 for v in vf}
+    heap = []
+    def push(a, b):
+        ca = cost(a, b) if a not in fixed else np.inf
+        cb = cost(b, a) if b not in fixed else np.inf
+        if ca == cb == np.inf: return
+        if ca <= cb: heapq.heappush(heap, (ca, a, b, ver[a], ver[b]))
+        else: heapq.heappush(heap, (cb, b, a, ver[b], ver[a]))
+    for t in tris:
+        for k in range(3):
+            if t[k] < t[(k + 1) % 3]: push(t[k], t[(k + 1) % 3])
+    n_alive = len(tris)
+    while n_alive > target and heap:
+        _, a, b, va, vb = heapq.heappop(heap)
+        if a not in vf or b not in vf or ver[a] != va or ver[b] != vb: continue
+        fa, fb = vf[a], vf[b]
+        shared = fa & fb
+        if not shared: continue
+        na = {v for f in fa for v in tris[f]} - {a}
+        nb = {v for f in fb for v in tris[f]} - {b}
+        if len(na & nb) != len(shared): continue  # link condition (keeps the piece manifold)
+        ok = True
+        for f in fa - shared:
+            t = tris[f]
+            n0 = np.cross(P[t[1]] - P[t[0]], P[t[2]] - P[t[0]])
+            t2 = [b if v == a else v for v in t]
+            n1 = np.cross(P[t2[1]] - P[t2[0]], P[t2[2]] - P[t2[0]])
+            l0, l1 = np.linalg.norm(n0), np.linalg.norm(n1)
+            if l1 < 1e-10 or (l0 > 1e-12 and n0 @ n1 < 0.3 * l0 * l1):
+                ok = False; break
+        if not ok: continue
+        for f in shared:
+            alive[f] = False; n_alive -= 1
+            for v in tris[f]:
+                if v != a: vf[v].discard(f)
+        for f in fa - shared:
+            tris[f] = [b if v == a else v for v in tris[f]]
+            vf[b].add(f)
+        del vf[a]
+        Q[b] = Q[b] + Q[a]
+        ver[b] += 1
+        for v in {v for f in vf[b] for v in tris[f]} - {b}:
+            push(v, b)
+    return [t for i, t in enumerate(tris) if alive[i]]
+
+def bone_base(b):
+    return b.replace('.L', '').replace('.R', '').replace('DEF-', '')
+
+# fewer triangles: simplify every piece; drop the finger joint balls
+KEEP = 0.1  # share of each piece's triangles to keep
+KEEP_HEAD = 0.22  # the plain egg head needs a few more to stay round
+out_tris, out_piece = [], []
+info = []  # per piece: (dominant bone, is joint ball, centroid)
 for ts in pieces.values():
     vs = np.unique(TRI[ts].ravel())
-    if not all(is_hand(DOM[v]) for v in vs):
+    doms = [DOM[v] for v in vs]
+    dom = max(set(doms), key=doms.count)
+    ring = bool(RING[vs[0]])
+    if ring and is_hand(dom):
         continue
-    lo, hi = P[vs].min(0), P[vs].max(0)
-    c, half = (lo + hi) / 2, (hi - lo) / 2
-    near = vs[np.argmin(np.linalg.norm(P[vs] - c, axis=1))]  # skin like the nearest original vertex
-    drop[ts] = True
-    newT.append(ICO_F + len(P) + 12 * len(newP))
-    newP.append(c + ICO_V * half)
-    newJ.append(np.repeat(OJ[near][None], 12, 0)); newW.append(np.repeat(W[near][None], 12, 0))
-    DOM = np.concatenate([DOM, np.repeat(DOM[near], 12)])
-P = np.vstack([P] + newP); OJ = np.vstack([OJ] + newJ); W = np.vstack([W] + newW)
-TRI = np.vstack([TRI[~drop]] + newT)
-nk = len(newP)
-print('mannequin: %d knuckles simplified, %d tris, height %.3f' % (nk, len(TRI), P[:, 1].max()))
+    tgt = max(6 if is_hand(dom) else 8, int(round(len(ts) * (KEEP_HEAD if dom in ('DEF-head', 'DEF-neck') and not ring else KEEP))))
+    for t in decimate(TRI[ts], tgt):
+        out_tris.append(t); out_piece.append(len(info))
+    info.append((bone_base(dom), ring, P[vs].mean(0)))
+TRI = np.array(out_tris)
+TRI_PIECE = np.array(out_piece)
+print('  simplified: %d pieces, %d tris' % (len(info), len(TRI)))
 # measurements for the worn props in src/render/characters.ts (forward = +z)
 def front(y, half_x=0.12):
     band = P[(np.abs(P[:, 1] - y) < 0.02) & (np.abs(P[:, 0]) < half_x)]
@@ -198,59 +266,54 @@ wb = P[(np.abs(P[:, 1] - wy) < 0.02) & (np.abs(P[:, 0]) < 0.3)]
 print('  front of chest %.3f, torso %.3f; waist (hips+0.1) half-width %.3f, z %.3f..%.3f' % (
     front(UP['DEF-spine.003'][1]), front(UP['DEF-spine.002'][1]), np.abs(wb[:, 0]).max(), wb[:, 2].min(), wb[:, 2].max()))
 
-def region(b):
-    b = b.replace('.L', '').replace('.R', '')
-    if b in ('DEF-head', 'DEF-neck'): return 'head'
-    if b in ('DEF-foot', 'DEF-toe'): return 'foot'
-    if b in ('DEF-thigh', 'DEF-shin', 'DEF-hips'): return 'legs'
-    if b in ('DEF-upper_arm', 'DEF-forearm'): return 'arm'
-    if is_hand(b): return 'hand'
-    return 'torso'
+# ------------------------------------------------------------------ clothes (one color per piece)
+# piece kinds by dominant bone; joint balls by where they sit
+def kind(dom, ring, c):
+    if ring:
+        if dom in ('head', 'neck'): return 'neckball'
+        if dom in ('upper_arm', 'forearm'): return 'elbow' if abs(c[0]) < 0.6 else 'wrist'
+        if dom == 'spine.002': return 'chestball'
+        if dom == 'spine.001': return 'waistball'
+        if dom == 'thigh': return 'hipball' if c[1] > 0.75 else 'knee'
+        if dom == 'shin': return 'ankle' if c[1] < 0.3 else 'knee'
+        return dom
+    if dom in ('head', 'neck'): return 'head'
+    if dom in ('shoulder', 'spine.003', 'spine.002', 'spine.001'): return 'torso'
+    if dom == 'hips': return 'pelvis'
+    if dom == 'toe': return 'foot'
+    if is_hand('DEF-' + dom): return 'hand'
+    return dom  # upper_arm, forearm, thigh, shin, foot
+PART = {'head': 'head', 'neckball': 'body', 'torso': 'body', 'chestball': 'body', 'waistball': 'body',
+        'upper_arm': 'body', 'elbow': 'body', 'forearm': 'body', 'wrist': 'body', 'hand': 'body',
+        'pelvis': 'legs', 'hipball': 'legs', 'thigh': 'legs', 'knee': 'legs', 'shin': 'legs', 'ankle': 'feet', 'foot': 'feet'}
+TORSO = {'torso', 'chestball', 'waistball'}
 
-tri_reg = []
-for t in TRI:
-    rs = [region(DOM[v]) for v in t]
-    tri_reg.append(max(set(rs), key=rs.count))
-tri_reg = np.array(tri_reg)
-CEN = P[TRI].mean(1)
-PART = {'head': 'head', 'torso': 'body', 'arm': 'body', 'hand': 'body', 'legs': 'legs', 'foot': 'feet'}
-tri_part = np.array([PART[r] for r in tri_reg])
-
-# ------------------------------------------------------------------ clothes (palette zones per triangle)
-# glTF space: +x = the character's left, +z = forward; arms along x (T-pose)
-WRIST = abs(UP['DEF-hand.L'][0])
-SLEEVE = 0.34  # short sleeve end (|x|)
-
-def body_role(v, reg, c):
-    x, y, z = c
-    ax = abs(x)
-    if reg == 'hand' or ax >= WRIST - 0.01: return 'skin'
+def body_role(v, k):
+    if k == 'hand': return 'skin'
+    if k == 'neckball':
+        return {'suit': 'top2', 'hoodie': 'topDark'}.get(v, 'skin')  # shirt collar, hood rim
     if v == 'tee':
-        return 'top' if reg == 'torso' or ax < SLEEVE else 'skin'
+        return 'top' if k in TORSO or k == 'upper_arm' else 'skin'
     if v == 'long':
         return 'top'
     if v == 'hoodie':  # darker cuffs and waistband
-        return 'topDark' if ax > WRIST - 0.06 or (reg == 'torso' and y < 1.02) else 'top'
-    if v == 'suit':  # jacket, shirt cuffs, shirt and tie in the V
-        if ax > WRIST - 0.03: return 'top2'
-        if reg == 'torso' and z > 0.02 and y > 1.22 and ax < (y - 1.22) * 0.5 + 0.012:
-            return 'accent' if ax < 0.016 and y < 1.44 else 'top2'
-        return 'top'
+        return 'topDark' if k in ('wrist', 'waistball') else 'top'
+    if v == 'suit':  # jacket with shirt cuffs
+        return 'top2' if k == 'wrist' else 'top'
     if v == 'hivis':  # vest with a reflective band over a tee
-        if reg == 'torso':
-            return 'stripe' if 1.16 < y < 1.22 else 'vest'
-        return 'top' if ax < SLEEVE else 'skin'
-    if v == 'overall':  # bib and straps over a tee
-        if reg == 'torso':
-            return 'pants' if y < 1.27 or abs(ax - 0.085) < 0.022 else 'top'
-        return 'top' if ax < SLEEVE else 'skin'
+        if k in TORSO: return 'stripe' if k == 'chestball' else 'vest'
+        return 'top' if k == 'upper_arm' else 'skin'
+    if v == 'overall':  # bib over a tee
+        if k in TORSO: return 'pants'
+        return 'top' if k == 'upper_arm' else 'skin'
     raise KeyError(v)
 
 VARIANTS = {
-    'head': {'bare': lambda v, reg, c: 'skin'},
-    'body': {v: body_role for v in ('tee', 'long', 'hoodie', 'suit', 'hivis', 'overall')},
-    'legs': {'pants': lambda v, reg, c: 'pants', 'shorts': lambda v, reg, c: 'pants' if c[1] > 0.6 else 'skin'},
-    'feet': {'shoe': lambda v, reg, c: 'shoe', 'sneaker': lambda v, reg, c: 'shoe2' if c[1] < 0.03 else 'shoe'},
+    'head': {'bare': lambda v, k, c: 'skin'},
+    'body': {v: lambda v, k, c: body_role(v, k) for v in ('tee', 'long', 'hoodie', 'suit', 'hivis', 'overall')},
+    'legs': {'pants': lambda v, k, c: 'pants',
+             'shorts': lambda v, k, c: 'pants' if k in ('pelvis', 'hipball', 'thigh') else 'skin'},
+    'feet': {'shoe': lambda v, k, c: 'shoe', 'sneaker': lambda v, k, c: 'shoe2' if c[1] < 0.03 else 'shoe'},
 }
 
 def build_part(sel, roles):
@@ -265,11 +328,19 @@ def build_part(sel, roles):
     _, first, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
     return dict(P=vP[first], J=vJ[first], W=Wq[first], S=vS[first], I=inv.reshape(-1))
 
+CEN = P[TRI].mean(1)
+def tri_dom(t):
+    ds = [bone_base(DOM[v]) for v in t]
+    return max(set(ds), key=ds.count)
+# joint balls are small pieces: label the whole ball; other pieces per triangle
+tri_kind = np.array([kind(*info[i]) if info[i][1] else kind(tri_dom(t), False, CEN[n])
+                     for n, (t, i) in enumerate(zip(TRI, TRI_PIECE))])
+tri_part = np.array([PART[k] for k in tri_kind])
 parts_out = []
 for part, vs in VARIANTS.items():
     sel = np.where(tri_part == part)[0]
     for v, fn in vs.items():
-        pt = build_part(sel, np.array([R[fn(v, tri_reg[t], CEN[t])] for t in sel]))
+        pt = build_part(sel, np.array([R[fn(v, tri_kind[t], CEN[t])] for t in sel]))
         pt['id'] = '%s_%s' % (part, v)
         parts_out.append(pt)
         print('%-14s verts %5d tris %5d' % (pt['id'], len(pt['P']), len(sel)))

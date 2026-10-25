@@ -13,7 +13,7 @@
 import { MINUTES_PER_DAY, MOVE, ONLINE, OUTSIDE } from './config';
 import { serviceDemand, serviceRate } from './production';
 import { dayOf, dayStart, hourOf, type Ctx } from './ctx';
-import { BUILDINGS, BUSINESS_KINDS, comfortOf, GOOD, ROLE } from './goods';
+import { BUILDINGS, BUSINESS_KINDS, comfortOf, EDIBLE, foodIn, GOOD, ROLE } from './goods';
 import { deliveredFraction } from './buildings';
 import { buildCost, sitesOf } from './firms';
 import { yardFirms } from './construction';
@@ -64,7 +64,48 @@ const bHours = (p: Person, b: Building) => { const [x, y] = doorOf(b); return ho
 const go = (b: Building): Step => ({ k: 'go', to: { t: 'bld', id: b.id } });
 
 function edibleCount(inv: Record<Good, number>): number {
-  return inv.groceries;
+  return foodIn(inv);
+}
+
+/** A person's taste for a food (0.6–1.4), stable for life. */
+function taste(p: Person, g: Good): number {
+  const h = Math.imul(p.id ^ 0x9e3779b9, 2654435761) ^ Math.imul(EDIBLE.indexOf(g) + 7, 40503);
+  return 0.6 + ((h >>> 8) % 1000) / 1250;
+}
+
+/**
+ * A basket of food at a store: `want` portions spread over what's on the
+ * shelves, by their taste, the price (counts more when money is tight),
+ * what they haven't had lately, and (for the better off) a liking for meat
+ * and dairy. Each portion goes to the food that's most wanted given what's
+ * already in the basket, so baskets come out varied.
+ */
+function foodBasket(v: View, b: Building, f: Firm, want: number): { list: Partial<Record<Good, number>>; exp: Partial<Record<Good, number>>; cost: number; n: number } | null {
+  const { p } = v;
+  const items = EDIBLE.filter((g) => (b.store[g] ?? 0) >= 1 && (f.prices[g] ?? 0) > 0);
+  if (!items.length) return null;
+  const weight = new Map(items.map((g) => {
+    const price = f.prices[g]!;
+    const fancy = g === 'meat' || g === 'dairy' ? 0.8 * Math.max(0, 1 - v.mv) : 0;
+    return [g, (taste(p, g) * (1 + fancy)) / (1 + (p.ate?.[g] ?? 0)) / Math.pow(price, 0.5 + v.mv)];
+  }));
+  const list: Partial<Record<Good, number>> = {}, exp: Partial<Record<Good, number>> = {};
+  let cost = 0, n = 0;
+  for (let k = 0; k < want; k++) {
+    let best: Good | null = null, bw = 0;
+    for (const g of items) {
+      const have = list[g] ?? 0;
+      if (have + 1 > Math.floor(b.store[g]) || cost + f.prices[g]! > p.money) continue;
+      const w = weight.get(g)! / (1 + have);
+      if (w > bw) { bw = w; best = g; }
+    }
+    if (!best) break;
+    list[best] = (list[best] ?? 0) + 1;
+    exp[best] = f.prices[best]!;
+    cost += f.prices[best]!;
+    n++;
+  }
+  return n ? { list, exp, cost, n } : null;
 }
 
 /** How much a bank would probably lend them (0 if there's no bank yet). */
@@ -84,7 +125,7 @@ function makeView(ctx: Ctx, p: Person): View {
   const h = hourOf(ctx.s.tick);
   // groceries already ordered count toward the buffer (unless they're hungry now: then only what's at hand counts)
   let coming = 0;
-  if (p.needs.food > 35) for (const sh of pendingDeliveries(ctx, p)) coming += sh.goods.groceries;
+  if (p.needs.food > 35) for (const sh of pendingDeliveries(ctx, p)) coming += foodIn(sh.goods);
   return {
     ctx, p, hour: h, night: h >= 21 || h < 6,
     // what money is worth to them: less the more they have, but the ambitious stay hungry for more
@@ -266,7 +307,7 @@ function openPlaces(ctx: Ctx): Open {
   c = { t: ctx.s.tick, stores: [], restaurants: [], dealers: [], open: new Set() };
   for (const b of ctx.s.buildings) {
     if (b.kind === 'store' && ok(b)) c.stores.push(b);
-    else if (b.kind === 'restaurant' && ok(b) && b.store.groceries >= 1.2) c.restaurants.push(b);
+    else if (b.kind === 'restaurant' && ok(b) && foodIn(b.store) >= 1.2) c.restaurants.push(b);
     else if (b.kind === 'dealer' && ok(b)) c.dealers.push(b);
   }
   for (const b of [...c.stores, ...c.restaurants, ...c.dealers]) c.open.add(b.id);
@@ -284,7 +325,7 @@ function groceryOptions(v: View): Option[] {
   if (deficit < 1) return out;
   // a store they know of, in person (the best value nearby; places they like and brands they know get a preference)
   const open = openPlaces(ctx);
-  const usable = (b: Building) => open.open.has(b.id) && b.store.groceries >= 1 && !cooling(v, 'store:' + b.id);
+  const usable = (b: Building) => open.open.has(b.id) && foodIn(b.store) >= 1 && !cooling(v, 'store:' + b.id);
   let known = knownOf(ctx, p, 'shop').filter(({ b }) => usable(b));
   if (known.length < 2) {
     // nowhere they know has food right now: look it up, or (if they're getting hungry) ask around
@@ -299,18 +340,21 @@ function groceryOptions(v: View): Option[] {
   let best: Option | null = null;
   for (const { b, pl } of known) {
     const f = ctx.fById.get(b.firm);
-    const price = f?.prices.groceries;
-    if (!f || !price) continue;
-    const q = Math.min(Math.ceil(deficit), Math.floor(p.money / price), Math.floor(b.store.groceries));
-    if (q < 1) continue;
+    if (!f) continue;
+    const basket = foodBasket(v, b, f, Math.ceil(deficit));
+    if (!basket) continue;
     const T = Math.max(0.6, bHours(p, b) * 2 + 0.25);
-    const score = (q * v.foodUnit - v.mv * q * price) / T + 0.5 * brand(p, f.id) + 0.6 * (pl.op ?? 0);
+    // a varied basket is a little more appealing than more of the same
+    const kinds = Object.keys(basket.list).length;
+    const score = (basket.n * v.foodUnit - v.mv * basket.cost) / T + 0.5 * brand(p, f.id) + 0.6 * (pl.op ?? 0) + 0.1 * kinds;
     if (!best || score > best.score) {
+      const what = (Object.keys(basket.list) as Good[]).sort((a, c) => (basket.list[c] ?? 0) - (basket.list[a] ?? 0)).map((g) => GOOD[g].label).join(', ');
+      const first = Object.keys(basket.list)[0] as Good;
       best = {
-        label: `Buy ${q} groceries at ${f.name}`,
+        label: `Shop for food at ${f.name}`,
         score: v.foodUnit > 3 ? score : cap(score),
-        why: `${price.toFixed(2)} each; has ${v.foodStock.toFixed(0)} of ${v.foodTarget.toFixed(0)} meals at hand`,
-        steps: () => [go(b), { k: 'shop', store: b.id, good: 'groceries', qty: q, max: price * 1.2 }, ...(v.home ? [go(v.home), { k: 'store' } as Step] : [])],
+        why: `${basket.n} portions (${what}) for about ${basket.cost.toFixed(1)}; has ${v.foodStock.toFixed(0)} of ${v.foodTarget.toFixed(0)} at hand`,
+        steps: () => [go(b), { k: 'shop', store: b.id, good: first, qty: basket.n, max: 0, list: basket.list, exp: basket.exp }, ...(v.home ? [go(v.home), { k: 'store' } as Step] : [])],
       };
     }
   }
@@ -1241,7 +1285,7 @@ export function decide(ctx: Ctx, p: Person): void {
   opts.push(...leisureOptions(v));
   opts.push(...politicsOptions(v));
   // late at night only home things make sense
-  if (v.night) for (const o of opts) if (!/sleep|home|eat|groceries|online|TV|phone|Order a meal|soup kitchen/i.test(o.label)) o.score -= 2;
+  if (v.night) for (const o of opts) if (!/sleep|home|eat|groceries|Shop for food|online|TV|phone|Order a meal|soup kitchen/i.test(o.label)) o.score -= 2;
   for (const o of opts) o.score += ctx.rng.range(-0.08, 0.08);
   // their own learned habits nudge the scores (survival needs stay in charge)
   const learned = brainBias(ctx, p);

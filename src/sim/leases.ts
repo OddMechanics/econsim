@@ -6,7 +6,7 @@
 // no construction, just a deposit and rent.
 
 import { addCash, cashOf, log, nameOf, type Ctx } from './ctx';
-import { BUILDINGS } from './goods';
+import { BUILDINGS, EDIBLE } from './goods';
 import { referenceWage } from './government';
 import { endContract } from './jobs';
 import { onFinished } from './hooks';
@@ -71,7 +71,8 @@ export function vacate(ctx: Ctx, u: Building, why = ''): void {
   for (const p of ctx.s.people) if (p.inside === u.id) p.inside = -1;
   u.kind = u.level ? 'suite' : 'shopfront';
   u.firm = -1;
-  u.store = { ...u.store, groceries: 0 };
+  u.store = { ...u.store };
+  for (const g of EDIBLE) u.store[g] = 0;
   u.lease = undefined;
   u.ver++;
   if (f && why) log(ctx, 'business', `${f.name} gave up its ${u.level ? 'office floor' : 'shop'} (${why}).`, { firm: f.id, bid: u.id });

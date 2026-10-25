@@ -192,7 +192,7 @@ export class StatsView {
 
   private spendSeries(d: DailyStat[]): Series[] {
     return [
-      this.s('Groceries', slot(0), d, (x) => x.flows['spend:groceries'] ?? 0),
+      this.s('Food', slot(0), d, (x) => ['groceries', 'bread', 'produce', 'dairy', 'meat'].reduce((a, g) => a + (x.flows['spend:' + g] ?? 0), 0)),
       this.s('Eating out & delivery', slot(1), d, (x) => x.flows['spend:meal'] ?? 0),
       this.s('Rent', slot(2), d, (x) => x.flows['spend:rent'] ?? 0),
       this.s('Clothes, furniture & electronics', slot(3), d, (x) => (x.flows['spend:clothes'] ?? 0) + (x.flows['spend:furniture'] ?? 0) + (x.flows['spend:computers'] ?? 0) + (x.flows['spend:tools'] ?? 0)),

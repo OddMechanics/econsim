@@ -297,3 +297,11 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   flickered. Fixes: `cushionDays` gates side work, manual job search and keeping a manual job (ai.ts); screens rotate booked
   ads only (render + exposure); camera near plane follows the radius; `gradeLot` levels lots (terrain mesh follows via
   `world.hver`); `morph.ts` patches panels in place (side panel, inspector, Net, TV, statistics with delegated clicks).
+- More minimalist (user: "could have way less triangles"):
+  - Each mannequin piece is simplified by quadric edge collapses in build_people.py (no new dependency). Surviving vertices keep their position and weights, and vertices on open piece edges are locked, so no holes open.
+  - The finger joint balls are dropped and the head keeps a bigger share so it stays round.
+  - ~1,070 tris per person (was 6.9k), people.glb 0.13 MB. Clothes follow body regions: tee = torso + upper arms; suit = jacket with white collar and cuffs on the joint balls; hi-vis band = chest ball; shorts = pelvis + thighs.
+- Food variety (user: yes to recommendations; countryside next): goods produce/milk/livestock/bread/dairy/meat, kinds
+  vegfarm/dairyfarm/ranch/bakery/dairyplant/meatplant (3D uses farm/food-plant looks for now), EDIBLE/SPOIL/foodIn/takeFood,
+  food baskets (ai.ts foodBasket, shop step `list`), variety-aware eating and diet happiness, restaurant meal mix, save
+  upgrade (save.ts `upgrade`). 30-day check: 0 deaths in two worlds.

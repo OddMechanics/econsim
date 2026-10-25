@@ -19,7 +19,7 @@
 
 import { MOVE, ONLINE, OUTSIDE } from './config';
 import { addCash, cashOf, hourOf, log, nameOf, newId, type Ctx } from './ctx';
-import { BUILDINGS, emptyInv, GOOD } from './goods';
+import { BUILDINGS, emptyInv, foodIn, GOOD, takeFood } from './goods';
 import { recordSale } from './firms';
 import { collectSalesTax } from './government';
 import { createShipment, deliverShipment, driveMinute, finishIfEmpty, loadShipment, nextShippingTime, parkAt, removeVehicle, shipmentWeight, startDrive, VAN_CAPACITY } from './logistics';
@@ -150,7 +150,7 @@ function orderMeal(ctx: Ctx, p: Person, step: Extract<Step, { k: 'order' }>, hom
   let rest: Building | undefined, bd = Infinity;
   for (const id of f.sites) {
     const b = ctx.bById.get(id);
-    if (!b || b.kind !== 'restaurant' || !b.built || b.store.groceries < 1.2) continue;
+    if (!b || b.kind !== 'restaurant' || !b.built || foodIn(b.store) < 1.2) continue;
     const d = Math.hypot(b.x - (home?.x ?? p.x), b.y - (home?.y ?? p.y));
     if (d < bd) { bd = d; rest = b; }
   }
@@ -165,7 +165,7 @@ function orderMeal(ctx: Ctx, p: Person, step: Extract<Step, { k: 'order' }>, hom
   addCash(ctx, app.id, commission + ONLINE.mealDeliveryFee);
   app.site.volume = (app.site.volume ?? 0) + price;
   collectSalesTax(ctx, rest, f.id, price);
-  rest.store.groceries -= 1.2;
+  takeFood(rest.store, 1.2);
   recordSale(f, 'meal', 1);
   recordSale(f, 'online', 1);
   // delivered home, or (no home) to the building they're in or the restaurant's door for pickup

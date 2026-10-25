@@ -253,6 +253,18 @@ What's new:
     - Building sites level the ground: terrain tiles whose centers lie inside a lot take the height of its center. Older cities are leveled once on load.
     - Panels (side panel, inspector, Net, TV, statistics) are patched in place instead of rebuilt, so what's under the mouse doesn't blink.
 
+106. **Food variety** (you said yes to "shoppers buy different foods"):
+    - **New goods:** fruit & vegetables (sold fresh), milk, livestock, bread, dairy, meat. "Crops" is now grain.
+    - **New businesses:** vegetable farms, dairy farms and livestock farms (fed with grain); bakeries (grain → bread), dairies (milk → dairy) and meat plants (livestock → meat).
+    - **Nutrition / enjoyment per portion:** groceries 34/5, bread 30/4, fruit & vegetables 24/6, dairy 28/7, meat 42/9.
+    - **Shopping:** a basket where each portion goes to the most-wanted food. That's personal taste (0.6–1.4, for life) ÷ (1 + times eaten lately) ÷ price^(0.5 + value of money), with the better-off liking meat and dairy up to 1.8×.
+    - **Variety:** people eat what they've had least of lately; the same food again is less enjoyable. Three or more different foods lately raises happiness (+0.04); one or none lowers it (−0.03).
+    - **Restaurants** cook with 30% meat, 30% fruit & vegetables, 20% bread, 20% groceries.
+    - **Spoilage per day:** grain 1%, groceries 2%, dairy 5%, fruit & vegetables and meat 6%, bread and milk 12%.
+    - **Shops** keep at least 10 of each fresh food.
+    - **The cost of a day's living** now uses a mixed basket.
+    - **Old saves** get the new goods added on load.
+
 Your rule for this (2026-10-24): nobody is forced to build a tower. Towers should come from people's and companies' own decisions in an urban economy; skyscrapers were never the goal in themselves.
 
 ### What a run looks like now (headless, final code apart from #93, 2026-10-24)
@@ -422,6 +434,7 @@ Research notes behind the politics: `docs/research/politics.md`.
 - **Visuals (by helper agents).**
   - **People up close.** Within ~38 m, up to 48 people become skinned, animated characters, fading back to the simple instanced figures at 46 m.
     - **Gender-neutral (2026-10-24).** Everyone is the same faceless, hairless mannequin. People differ only by height, build, skin tone and clothes. The renderer has no male/female concept, and the far figures have no faces or hair either.
+    - **Minimalist.** The mannequin is simplified to ~1,070 triangles per person (it had 13,700), faceted low-poly.
     - Source: the CC0 mannequin from Quaternius' *Universal Animation Library*, slimmed to a neutral build, with clips from that library and the *Ultimate Modular Men* pack (licenses in `public/models/people/LICENSE.txt`; build script `scripts/people-assets/build_people.py`).
     - Outfits by job (police, hi-vis, chef, apron, suit, office, casual), as simple color zones on the body (tee, long sleeves, hoodie, suit, hi-vis vest, overalls; trousers or shorts; shoes or sneakers) plus hats, apron and police belt.
     - All 20 poses, including phone, speech, cheering, protest sign and voting.

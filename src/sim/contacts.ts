@@ -14,7 +14,7 @@
 
 import { OUTSIDE } from './config';
 import { controllerOf, type Ctx } from './ctx';
-import { BUILDINGS } from './goods';
+import { BUILDINGS, RETAIL_GOODS } from './goods';
 import { staffAt } from './jobs';
 import type { Firm, Good } from './types';
 
@@ -48,9 +48,9 @@ function add(f: Firm | undefined, id: number): boolean {
 export function inputsOf(f: Firm): Good[] {
   const def = BUILDINGS[f.kind];
   if (def.recipe) return Object.keys(def.recipe.inputs) as Good[];
-  if (def.service === 'retail') return ['groceries', 'clothes', 'furniture', 'tools', 'computers'];
+  if (def.service === 'retail') return RETAIL_GOODS;
   if (def.service === 'cars') return ['cars'];
-  if (def.service === 'meal') return ['groceries'];
+  if (def.service === 'meal') return ['meat', 'produce', 'bread', 'groceries'];
   if (def.service === 'build') return ['planks', 'bricks', 'steel', 'concrete', 'glass'];
   return [];
 }

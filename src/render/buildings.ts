@@ -1322,6 +1322,8 @@ const BUILDERS: Record<BuildingKind, (c: Ctx) => void> = {
   plaza, park, trailer, house, apartments, tower, officetower: tower,
   farm, lumberyard, quarry, claypit, mine,
   sawmill, brickworks, steelmill, cementworks, glassworks, foodplant,
+  // (new farm and food-plant kinds use the farm and food-plant looks until they get their own)
+  vegfarm: farm, dairyfarm: farm, ranch: farm, bakery: foodplant, dairyplant: foodplant, meatplant: foodplant,
   workshop, furniture: furniturePlant, textile, electronics, carplant,
   store, dealer, restaurant, office: officeBlock, depot, yard: constructionYard, bank: bankBlock, adco,
   cityhall, studio, netco,

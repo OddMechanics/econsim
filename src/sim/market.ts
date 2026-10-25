@@ -12,7 +12,7 @@
 
 import { FOOD_SPOIL_PER_DAY, MARKET, MINUTES_PER_DAY, OUTSIDE } from './config';
 import { addCash, cashOf, log, newId, type Ctx } from './ctx';
-import { GOOD } from './goods';
+import { GOOD, SPOIL } from './goods';
 import { createShipment } from './logistics';
 import { introduce, knows } from './contacts';
 import { meet } from './social';
@@ -331,15 +331,17 @@ export function marketNewDay(ctx: Ctx): void {
 
 /** Food goes bad slowly wherever it is, so overproducing it has a cost. */
 export function spoilFood(ctx: Ctx): void {
-  const keep = 1 - FOOD_SPOIL_PER_DAY;
-  const foods: Good[] = ['crops', 'groceries'];
+  // fresh food spoils within days, grain and packaged groceries keep (FOOD_SPOIL_PER_DAY scales the table)
+  const foods = Object.keys(SPOIL) as Good[];
+  const keepOf = (g: Good) => 1 - (SPOIL[g] ?? 0) * (FOOD_SPOIL_PER_DAY / 0.03);
   for (const g of foods) {
+    const keep = keepOf(g);
     for (const p of ctx.s.people) { p.inv[g] *= keep; p.pantry[g] *= keep; }
     for (const b of ctx.s.buildings) b.store[g] *= keep;
     for (const sh of ctx.s.shipments) sh.goods[g] *= keep;
   }
   for (const o of ctx.s.market.orders) {
-    if (o.side === 'ask' && o.who !== OUTSIDE.id && foods.includes(o.good)) o.qty = Math.floor(o.qty * keep + ctx.rng.next());
+    if (o.side === 'ask' && o.who !== OUTSIDE.id && foods.includes(o.good)) o.qty = Math.floor(o.qty * keepOf(o.good) + ctx.rng.next());
   }
   ctx.s.market.orders = ctx.s.market.orders.filter((o) => o.qty > 0);
 }

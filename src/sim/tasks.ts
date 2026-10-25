@@ -5,7 +5,7 @@
 
 import { CARRY_CAPACITY, MOVE, OUTSIDE } from './config';
 import { addCash, cashOf, hourOf, log, pay, type Ctx } from './ctx';
-import { BUILDINGS, chooseFloors, DURABLES, GOOD, invWeight, ROLE } from './goods';
+import { BUILDINGS, chooseFloors, DURABLES, EDIBLE, foodIn, GOOD, invWeight, ROLE, takeFood } from './goods';
 import { buildMinute, checkFinished, createBuilding, deliveredFraction, findLot } from './buildings';
 import { doorOf, stationsOf, toWorld, worldHeading } from './layout';
 import { learnPrices } from './market';
@@ -564,8 +564,7 @@ function execute(ctx: Ctx, p: Person, step: Step): StepResult {
     }
     case 'store': {
       if (p.inside !== p.home) return 'instant';
-      p.pantry.groceries += p.inv.groceries;
-      p.inv.groceries = 0;
+      for (const g of EDIBLE) { p.pantry[g] += p.inv[g]; p.inv[g] = 0; }
       return 'instant';
     }
     case 'apply': {
@@ -730,6 +729,30 @@ function shopMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'shop' }>): St
     if (task.elapsed < 25) return 'wait';
     return letDown('nobody at the counter');
   }
+  // a food basket: each item they find on the shelf at about the price they expected
+  if (step.list) {
+    let got = 0, paid = 0;
+    for (const [gk, want] of Object.entries(step.list)) {
+      const g = gk as Good;
+      const pr = f.prices[g] ?? Infinity;
+      if (pr > (step.exp?.[g] ?? pr) * 1.25) continue;
+      const q = Math.min(want ?? 0, Math.floor(b.store[g]), Math.floor(cashOf(ctx, p.id) / pr));
+      if (q < 1) continue;
+      addCash(ctx, p.id, -q * pr);
+      addCash(ctx, f.id, q * pr);
+      tally(ctx, 'spend:' + g, q * pr);
+      collectSalesTax(ctx, b, f.id, q * pr);
+      b.store[g] -= q;
+      recordSale(f, g, q);
+      p.prices[g] = { p: pr / 1.1, t: ctx.s.tick, src: 'seen' };
+      p.inv[g] += q;
+      got += q; paid += q * pr;
+    }
+    if (got < 1) return letDown('the shelves were empty');
+    visitedPlace(ctx, p, b, kind, true);
+    p.activity = `bought ${got} portions of food for ${paid.toFixed(1)}`;
+    return 'instant';
+  }
   const price = f.prices[step.good] ?? Infinity;
   if (price > step.max) return letDown('too expensive');
   const qty = Math.min(step.qty, Math.floor(b.store[step.good]), Math.floor(cashOf(ctx, p.id) / price));
@@ -784,8 +807,10 @@ function eatOutMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'eatOut' }>)
   if (!task.mem?.served) {
     const price = f.prices.meal ?? 5;
     if (staffPresent(ctx, b.id, 'cook') || staffPresent(ctx, b.id)) {
-      if (b.store.groceries >= 1.2 && cashOf(ctx, p.id) >= price) {
-        b.store.groceries -= 1.2;
+      if (foodIn(b.store) >= 1.2 && cashOf(ctx, p.id) >= price) {
+        takeFood(b.store, 1.2);
+        const ate = (p.ate ??= {});
+        for (const g of ['meat', 'produce', 'bread'] as Good[]) ate[g] = (ate[g] ?? 0) + 0.3; // a restaurant meal is varied
         addCash(ctx, p.id, -price);
         addCash(ctx, f.id, price);
         tally(ctx, 'spend:meal', price);

@@ -12,7 +12,7 @@
 
 import { CARRY_CAPACITY, MOVE, OUTSIDE } from './config';
 import { addCash, cashOf, log, newId, nameOf, type Ctx } from './ctx';
-import { addInv, DURABLES, emptyInv, GOOD, invTotal, invWeight } from './goods';
+import { addInv, DURABLES, EDIBLE, emptyInv, GOOD, invTotal, invWeight } from './goods';
 import { doorOf } from './layout';
 import { curbSpot, route } from './roads';
 import { checkFinished, finishBuilding } from './buildings';
@@ -146,7 +146,7 @@ function receive(ctx: Ctx, p: Person, sh: Shipment, goods: Inventory): void {
       carDelivered(ctx, p, sh.from === GATE ? OUTSIDE.id : ctx.bById.get(sh.from)?.firm ?? OUTSIDE.id);
     } else if (DURABLES.includes(g) && g !== 'tools') {
       p.durables[g] = (p.durables[g] ?? 0) + (GOOD[g].lifeDays ?? 30) * q;
-    } else if (g === 'groceries') {
+    } else if (EDIBLE.includes(g)) {
       p.pantry[g] += q;
     } else {
       p.inv[g] += q;

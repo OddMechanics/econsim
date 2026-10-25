@@ -87,17 +87,33 @@ export function shelterHere(ctx: Ctx, p: Person): number {
   return b.kind === 'park' || b.kind === 'plaza' ? 0 : 0.8;
 }
 
-/** Best food to eat from an inventory (leftovers count: half a pack is half a meal). */
-function pickFood(inv: Record<Good, number>): Good | null {
-  for (const g of EDIBLE) if (inv[g] >= 0.25) return g;
-  return null;
+/** What to eat from an inventory: of what's there, what they've had least of lately (leftovers count: half a pack is half a meal). */
+function pickFood(p: Person, inv: Record<Good, number>): Good | null {
+  let best: Good | null = null, bv = Infinity;
+  for (const g of EDIBLE) {
+    if (inv[g] < 0.25) continue;
+    const v = p.ate?.[g] ?? 0;
+    if (v < bv) { bv = v; best = g; }
+  }
+  return best;
 }
 
 export function eat(p: Person, g: Good, from: Record<Good, number>): void {
   const amount = Math.min(1, from[g]);
   from[g] -= amount;
+  // the same thing again and again gets dull; something different is a treat
+  const lately = p.ate?.[g] ?? 0;
+  const ate = (p.ate ??= {});
+  ate[g] = lately + amount;
   p.needs.food = Math.min(100, p.needs.food + (GOOD[g].nutrition ?? 20) * amount);
-  p.needs.fun = Math.min(100, p.needs.fun + (GOOD[g].joy ?? 0) * amount);
+  p.needs.fun = Math.min(100, p.needs.fun + (GOOD[g].joy ?? 0) * amount * Math.max(0.3, 1.3 - 0.25 * lately));
+}
+
+/** How many different foods they've eaten lately. */
+export function dietVariety(p: Person): number {
+  let n = 0;
+  for (const g of EDIBLE) if ((p.ate?.[g] ?? 0) > 0.4) n++;
+  return n;
 }
 
 /** Needs drift every minute; people eat automatically when hungry. */
@@ -112,8 +128,8 @@ export function updateNeeds(ctx: Ctx, p: Person, working: boolean, dt = 1): void
 
   if (n.food < NEEDS.eatBelow && !p.sleeping) {
     const atHome = p.inside >= 0 && p.inside === p.home;
-    const fromInv = pickFood(p.inv);
-    const g = fromInv ?? (atHome ? pickFood(p.pantry) : null);
+    const fromInv = pickFood(p, p.inv);
+    const g = fromInv ?? (atHome ? pickFood(p, p.pantry) : null);
     if (g) eat(p, g, fromInv ? p.inv : p.pantry);
   }
 
@@ -149,8 +165,13 @@ export function personDaily(ctx: Ctx, p: Person): void {
   const income = ctx.cById.get(p.job)?.wage ?? (p.firms.length ? 25 : 0);
   const avg = averageWage(ctx);
   const status = Math.max(-0.2, Math.min(0.2, 0.15 * Math.log((income + 5) / (avg + 5)) + 0.04 * Math.log10(10 + Math.max(0, p.money)) - 0.08));
-  const happyTarget = 0.25 * target + 0.25 * comfort + 0.05 * things + status + (p.job >= 0 || p.firms.length ? 0.1 : -0.05);
+  // a varied diet (three or more different foods lately) is one of life's pleasures; eating one thing gets you down
+  const variety = dietVariety(p);
+  const diet = variety >= 3 ? 0.04 : variety <= 1 ? -0.03 : 0;
+  const happyTarget = 0.25 * target + 0.25 * comfort + 0.05 * things + status + diet + (p.job >= 0 || p.firms.length ? 0.1 : -0.05);
   p.happy = Math.max(0, Math.min(1, 0.85 * p.happy + 0.15 * happyTarget));
+  // what they ate fades from memory over a few days
+  if (p.ate) for (const g of Object.keys(p.ate) as Good[]) { const v = (p.ate[g] ?? 0) * 0.6; if (v < 0.05) delete p.ate[g]; else p.ate[g] = Math.round(v * 100) / 100; }
   // forget old cooldowns
   for (const k of Object.keys(p.cooldown)) if (p.cooldown[k] < ctx.s.tick - 2 * MINUTES_PER_DAY) delete p.cooldown[k];
 }

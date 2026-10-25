@@ -48,9 +48,10 @@ No attribution is required, but thanks to Quaternius for making these free
 How the files were made: scripts/people-assets/build_people.py (run it with
 the two downloads above). It maps the mannequin onto our 60-joint skeleton
 (identity rest rotations), slims its sculpted shoulders, chest and arms toward
-the bones for a neutral build, swaps the 28 knuckle spheres for low-poly ones,
-splits it into head / body / legs / feet with clothes painted as palette zones
-per triangle (welded, normals rebuilt flat at load), and retargets the clips
+the bones for a neutral build, simplifies every piece to about a tenth of its
+triangles (~1,000 per person; finger joint balls dropped), splits it into
+head / body / legs / feet with clothes painted as palette zones per triangle
+(welded, normals rebuilt flat at load), and retargets the clips
 (world-rotation deltas, 30 fps, int16 quaternions). people-anim.bin is a small
 custom format: "PANM", u32 version, u32 JSON length, JSON header (joints,
 clips), then int16 frames (body position * 8192, 21 quaternions * 32767).

@@ -24,7 +24,7 @@ const LR = 0.03;
 export function categoryOf(label: string): number {
   if (/^Go to work|^Work at own/.test(label)) return 0;
   if (/^Drive for|^Deliver for|day labor/.test(label)) return 1;
-  if (/^Buy \d+ |Go home to eat|groceries|^Order (a meal|dinner)/.test(label)) return 2;
+  if (/^Buy \d+ |^Shop for food|Go home to eat|groceries|^Order (a meal|dinner)/.test(label)) return 2;
   if (/Hang out|^Eat at|Browse|^Go for a walk|Net|TV/.test(label)) return 3;
   if (/sleep|Relax|^Rest/i.test(label)) return 4;
   if (/^Have a|^Buy a trailer|Rent a|Move into|Look for a place/.test(label)) return 5;

@@ -11,8 +11,10 @@ import type { RngState } from './rng';
 // ------------------------------------------------------------------- goods
 
 export const GOODS = [
-  'crops', 'wood', 'stone', 'clay', 'ore', // raw (farms, logging, quarries, clay pits, mines)
-  'groceries', 'planks', 'bricks', 'steel', 'concrete', 'glass', // processed
+  'crops', 'produce', 'milk', 'livestock', // from farms: grain, fruit & vegetables, milk, animals for meat
+  'wood', 'stone', 'clay', 'ore', // raw (logging, quarries, clay pits, mines)
+  'groceries', 'bread', 'dairy', 'meat', // food (packaged groceries, bakeries, dairies, meat plants)
+  'planks', 'bricks', 'steel', 'concrete', 'glass', // processed
   'tools', 'furniture', 'clothes', 'computers', 'cars', // manufactured
 ] as const;
 export type Good = (typeof GOODS)[number];
@@ -220,7 +222,7 @@ export type Step =
   | { k: 'build'; bid: number; mins: number }
   | { k: 'work'; contract: number; until: number } // a shift
   | { k: 'ownWork'; bid: number; until: number } // owner working their own site
-  | { k: 'shop'; store: number; good: Good; qty: number; max: number; device?: 'phone' | 'tv' } // retail (electronics bought as a phone or TV)
+  | { k: 'shop'; store: number; good: Good; qty: number; max: number; device?: 'phone' | 'tv'; list?: Partial<Record<Good, number>>; exp?: Partial<Record<Good, number>> } // retail (electronics bought as a phone or TV; a food basket as a list, with the prices they expect)
   /** Order online (from a local store's web shop, a marketplace, or an outside retailer): delivered to their home. */
   | { k: 'order'; seller: number; good: Good; qty: number; price: number; via: number; device?: 'phone' | 'tv'; meal?: boolean }
   | { k: 'gig'; app: number; mins: number } // work for a gig app (deliveries or rides) for a while
@@ -326,6 +328,8 @@ export interface Person {
   knownHomes: number; // tick they last saw housing listings
   /** The places they know of: shops, restaurants, employers, flats, parks (see places.ts). */
   places?: KnownPlace[];
+  /** What they've eaten lately (food -> recent portions, fading daily): variety makes meals more enjoyable. */
+  ate?: Partial<Record<Good, number>>;
   rel: Record<number, Relation>;
   decision: DecisionRecord | null;
   activity: string;
@@ -422,7 +426,9 @@ export type BuildingKind =
   | 'apartments' // modern mid-rise apartment block (3–10 floors)
   | 'tower' // residential high-rise (10–50 floors), shops on the ground floor downtown
   | 'officetower' // office high-rise built by a developer and leased out floor by floor
-  | 'farm' | 'lumberyard' | 'quarry' | 'claypit' | 'mine'
+  | 'farm' | 'vegfarm' | 'dairyfarm' | 'ranch' // grain, fruit & vegetables, dairy cows, livestock
+  | 'lumberyard' | 'quarry' | 'claypit' | 'mine'
+  | 'bakery' | 'dairyplant' | 'meatplant' // food processing
   | 'sawmill' | 'brickworks' | 'steelmill' | 'cementworks' | 'glassworks' | 'foodplant'
   | 'workshop' | 'furniture' | 'textile' | 'electronics' | 'carplant'
   | 'store' | 'dealer' | 'restaurant' | 'office' | 'depot' | 'yard' | 'bank'

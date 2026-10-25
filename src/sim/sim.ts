@@ -3,7 +3,7 @@ import { dayOf, hourOf, log, makeCtx, minuteOfDay, type Ctx } from './ctx';
 import { decide, reviewJob } from './ai';
 import { createBuilding, decayBuildings, gradeLot } from './buildings';
 import { onFinished, sellHooks } from './hooks';
-import { slotsFor } from './goods';
+import { foodIn, slotsFor } from './goods';
 import { chainsDaily, firmDaily, firmHourly, foundFirm, openBranch } from './firms';
 import { endContract, hire, jobsDaily, postJob, processApplications } from './jobs';
 import { housingDaily, moveIn, moveOut } from './housing';
@@ -175,8 +175,8 @@ export function createState(seed: number): SimState {
     const chain = openBranch(ctx, 'store', 'QuickStop', shopLot, clerk, 500);
     const shop = ctx.bById.get(chain.sites[0])!;
     // it opens with its shelves stocked
-    Object.assign(shop.store, { groceries: 140, clothes: 12, furniture: 4, tools: 6, computers: 6 });
-    for (const good of ['groceries', 'clothes', 'furniture', 'tools', 'computers'] as Good[]) chain.prices[good] = OUTSIDE.prices[good] * OUTSIDE.importMarkup * 1.35;
+    Object.assign(shop.store, { groceries: 80, bread: 25, produce: 25, dairy: 20, meat: 15, clothes: 12, furniture: 4, tools: 6, computers: 6 });
+    for (const good of ['groceries', 'bread', 'produce', 'dairy', 'meat', 'clothes', 'furniture', 'tools', 'computers'] as Good[]) chain.prices[good] = OUTSIDE.prices[good] * OUTSIDE.importMarkup * 1.35;
     hire(ctx, postJob(ctx, chain, shop.id, 'cashier', Math.round(WAGES.reference * 0.9)), clerk);
     log(ctx, 'business', `QuickStop, a convenience-store chain, opened a branch in ${name}.`, { firm: chain.id, bid: shop.id });
   }
@@ -249,7 +249,7 @@ export class Simulation {
       r[LAST] = s.tick;
       p.px = p.x;
       p.py = p.y;
-      if (p.task && p.needs.food < 12 && p.inv.groceries < 1 && s.tick - p.task.started > 90 && p.driving < 0) p.task = null;
+      if (p.task && p.needs.food < 12 && foodIn(p.inv) < 1 && s.tick - p.task.started > 90 && p.driving < 0) p.task = null;
       if (!p.task) {
         if (p.brainMem) learn(ctx, p);
         decide(ctx, p);

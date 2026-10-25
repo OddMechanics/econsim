@@ -1,0 +1,20 @@
+// What people eat now: food sales by kind, diets, store shelves, food plants.
+import { readFileSync } from 'node:fs';
+import { Simulation } from '../src/sim/sim';
+import { deserialize } from '../src/sim/save';
+import { EDIBLE } from '../src/sim/goods';
+import { dietVariety } from '../src/sim/people';
+const sim = new Simulation(deserialize(readFileSync(process.argv[2], 'utf8')));
+for (let i = 0; i < Number(process.argv[3] ?? 2) * 1440; i++) sim.step();
+const s = sim.state;
+const d = s.daily!.at(-1)!;
+console.log('pop', s.people.length, 'dead', s.counters.deaths, 'avg food', (s.people.reduce((a, p) => a + p.needs.food, 0) / s.people.length).toFixed(0));
+console.log('food spending yesterday:', EDIBLE.map((g) => `${g} ${Math.round(d.flows['spend:' + g] ?? 0)}`).join(' · '));
+const v = [0, 0, 0, 0, 0, 0];
+for (const p of s.people) v[Math.min(5, dietVariety(p))]++;
+console.log('people by number of different foods eaten lately:', v.join(' / '));
+const shelves: Record<string, number> = {};
+for (const b of s.buildings) if (b.kind === 'store') for (const g of EDIBLE) shelves[g] = (shelves[g] ?? 0) + b.store[g];
+console.log('on store shelves:', Object.entries(shelves).map(([g, q]) => `${g} ${Math.round(q)}`).join(' · '));
+console.log('food makers:', ['farm', 'vegfarm', 'dairyfarm', 'ranch', 'foodplant', 'bakery', 'dairyplant', 'meatplant'].map((k) => `${k} ${s.buildings.filter((b) => b.kind === k && b.built).length}`).join(' · '));
+console.log('markets:', ['crops', 'produce', 'milk', 'livestock', 'bread', 'dairy', 'meat'].map((g) => `${g} ${d.markets[g as 'crops']?.price.toFixed(2)} (imp ${d.markets[g as 'crops']?.imp})`).join(' · '));

@@ -5,7 +5,7 @@
 
 import { JOBS, OUTSIDE } from './config';
 import { addCash, cashOf, controllerOf, log, newId, type Ctx } from './ctx';
-import { BUILDINGS, chooseFloors, materialsFor, RETAIL_GOODS, slotsFor, workHoursFor } from './goods';
+import { BUILDINGS, chooseFloors, EDIBLE, materialsFor, RETAIL_GOODS, slotsFor, workHoursFor } from './goods';
 import { createBuilding, farmFertility, findLot, transferBuilding } from './buildings';
 import { hire, layOff, offerWage, postJob, staffAt } from './jobs';
 import { buyNow, learnPrices, listAsk, placeBid, hasBid } from './market';
@@ -181,7 +181,7 @@ function initPrices(f: Firm, owner: Person): void {
   if (def.service === 'retail') for (const g of RETAIL_GOODS) f.prices[g] = owner.prices[g].p * 1.45;
   if (def.service === 'ads') f.prices.rate = 3; // rent for an ad space per day
   if (def.service === 'cars') f.prices.cars = owner.prices.cars.p * 1.2;
-  if (def.service === 'meal') f.prices.meal = owner.prices.groceries.p * 2.5 + 2.5;
+  if (def.service === 'meal') f.prices.meal = mealFoodCost(owner) * 2.5 + 2.5;
   if (def.service === 'freight') f.prices.freight = 0.02;
   if (def.service === 'build') f.prices.build = 1.25; // markup on cost
   if (def.service === 'finance') f.prices.rate = 0.0012; // interest per day
@@ -406,8 +406,8 @@ function reprice(ctx: Ctx, f: Firm, b: Building, owner: Person): void {
     }
   }
   if (def.service === 'meal') {
-    // a meal: the food (1.2 groceries), the kitchen and the staff, and a margin
-    const base = owner.prices.groceries.p * 1.2 * 1.4 + referenceWage(ctx) * 0.12;
+    // a meal: the food (1.2 portions of meat, vegetables, bread…), the kitchen and the staff, and a margin
+    const base = mealFoodCost(owner) * 1.2 * 1.4 + referenceWage(ctx) * 0.12;
     const meals = f.salesAvg.meal ?? 0;
     let price = f.prices.meal ?? base * 2;
     if (meals < 6) price *= 0.96; else if (meals > 25) price *= 1.04;
@@ -435,7 +435,14 @@ function reprice(ctx: Ctx, f: Firm, b: Building, owner: Person): void {
   }
 }
 
-/** Buy what the site will need: inputs for production, stock for shelves, groceries for the kitchen. */
+/** What a restaurant cooks with (shares of the food in a meal). */
+const MEAL_MIX: [Good, number][] = [['meat', 0.3], ['produce', 0.3], ['bread', 0.2], ['groceries', 0.2]];
+/** What a portion of a restaurant meal's food costs, as the boss believes prices are. */
+function mealFoodCost(owner: Person): number {
+  return MEAL_MIX.reduce((a, [g, share]) => a + owner.prices[g].p * share, 0);
+}
+
+/** Buy what the site will need: inputs for production, stock for shelves, food for the kitchen. */
 function procure(ctx: Ctx, f: Firm, b: Building, owner: Person): void {
   const def = BUILDINGS[b.kind];
   const needs: Partial<Record<Good, number>> = {};
@@ -448,12 +455,14 @@ function procure(ctx: Ctx, f: Firm, b: Building, owner: Person): void {
       const sold = f.salesAvg[g] ?? 0;
       // an empty shelf means it sold out: more was wanted than it could sell, so order well beyond past sales
       const soldOut = b.store[g] < 1 + sold * 0.15;
-      needs[g] = Math.max(g === 'groceries' ? 10 : 2, sold * (soldOut ? 4 : 2.5));
+      needs[g] = Math.max(g === 'groceries' ? 8 : EDIBLE.includes(g) ? 10 : 2, sold * (soldOut ? 4 : 2.5));
     }
   } else if (def.service === 'cars') {
     needs.cars = Math.max(1, (f.salesAvg.cars ?? 0) * 3);
   } else if (def.service === 'meal') {
-    needs.groceries = Math.max(10, (f.salesAvg.meal ?? 0) * 1.3 * 2);
+    // the kitchen cooks with a mix: meat, fruit and vegetables, bread, some packaged groceries
+    const portions = Math.max(10, (f.salesAvg.meal ?? 0) * 1.3 * 2);
+    for (const [g, share] of MEAL_MIX) needs[g] = portions * share;
   }
   for (const [gk, target] of Object.entries(needs)) {
     const g = gk as Good;

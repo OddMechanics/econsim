@@ -111,14 +111,15 @@ export const FOOD_SPOIL_PER_DAY = 0.03;
 export const OUTSIDE = {
   id: -2,
   prices: {
-    crops: 0.8, wood: 0.7, stone: 0.9, clay: 0.6, ore: 1.4, groceries: 1.5, planks: 1.7, bricks: 1.7,
+    crops: 0.8, produce: 1.0, milk: 0.7, livestock: 2.4, wood: 0.7, stone: 0.9, clay: 0.6, ore: 1.4,
+    groceries: 1.5, bread: 1.3, dairy: 1.7, meat: 3.2, planks: 1.7, bricks: 1.7,
     steel: 7, concrete: 1.6, glass: 3.6, tools: 14, furniture: 26, clothes: 9, computers: 40, cars: 260,
   } as Record<string, number>,
   importMarkup: 1.3,
   exportShare: 0.85,
   // the region buys what the city makes (its export base); manufactured goods sell best
   // (to the wider world a small city is a price-taker: it can sell about as much as it can make)
-  buy: { crops: 800, wood: 600, stone: 600, clay: 300, ore: 500, groceries: 1500, planks: 1500, bricks: 1500, steel: 1000, concrete: 1500, glass: 1000, tools: 600, furniture: 600, clothes: 1000, computers: 500, cars: 100 } as Record<string, number>,
+  buy: { crops: 800, produce: 700, milk: 700, livestock: 400, bread: 800, dairy: 900, meat: 900, wood: 600, stone: 600, clay: 300, ore: 500, groceries: 1500, planks: 1500, bricks: 1500, steel: 1000, concrete: 1500, glass: 1000, tools: 600, furniture: 600, clothes: 1000, computers: 500, cars: 100 } as Record<string, number>,
   /** Outside suppliers' capacity per good per day (practically unlimited for a city this size). */
   supply: 4000,
   /** Hours from order to an outside truck setting off (orders placed in the afternoon come next morning). */
