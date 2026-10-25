@@ -28,6 +28,7 @@ import { BUILDINGS as DEFS } from './goods';
 import { emptyInv } from './goods';
 import { askAround, hiringSites, visitedPlace } from './places';
 import { GATE, type Building, type Good, type Person, type Place, type SimState, type Step } from './types';
+import { tally } from './stats';
 
 /**
  * How many game minutes the step being run covers. People who are just
@@ -735,6 +736,7 @@ function shopMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'shop' }>): St
   visitedPlace(ctx, p, b, kind, true);
   addCash(ctx, p.id, -qty * price);
   addCash(ctx, f.id, qty * price);
+  tally(ctx, 'spend:' + step.good, qty * price);
   collectSalesTax(ctx, b, f.id, qty * price);
   b.store[step.good] -= qty;
   recordSale(f, step.good, qty);
@@ -785,6 +787,7 @@ function eatOutMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'eatOut' }>)
         b.store.groceries -= 1.2;
         addCash(ctx, p.id, -price);
         addCash(ctx, f.id, price);
+        tally(ctx, 'spend:meal', price);
         collectSalesTax(ctx, b, f.id, price);
         recordSale(f, 'meal', 1);
         task.mem!.served = 1;

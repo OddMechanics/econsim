@@ -276,3 +276,8 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   cap 40 + pop/20; a housing brake (homeless share). Day 120: 2,490 / 3,031 people, 0 deaths (before 2,225 / 1,643).
 - The project is on GitHub: `git@github.com:OddMechanics/econsim.git` (branch `main`, first commit b30c762). Standing rule
   from the user: commit and push after every round of edits.
+- Statistics window (user: "make way better statistics… graphs… also markets"): `recordDaily` + `tally` in stats.ts
+  (DailyStat per game day; hooks for spending, trade, wages, rent, leases, construction, companies, buildings, government
+  books); `statcharts.ts` (time charts: lines/stacked/area with readouts, end labels and table views; bar lists; columns;
+  order-book depth; sparklines) and `statsview.ts` (8 sections, time-range filter). Colors validated (dark surface).
+  The charts showed a bug: the resident dividend counted itself as spending and paid only every other day (fixed).

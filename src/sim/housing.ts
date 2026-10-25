@@ -10,6 +10,7 @@ import { sellBuilding } from './estate';
 import { BUILDINGS, comfortOf } from './goods';
 import { onFinished } from './hooks';
 import type { Building, BuildingKind, Person } from './types';
+import { tally } from './stats';
 
 /** Buildings with flats to rent. */
 export const RENTALS = new Set<BuildingKind>(['apartments', 'tower']);
@@ -121,6 +122,7 @@ export function housingDaily(ctx: Ctx): void {
       if (cashOf(ctx, p.id) >= u.rent) {
         addCash(ctx, p.id, -u.rent);
         addCash(ctx, b.owner, u.rent);
+        tally(ctx, 'spend:rent', u.rent);
         const f = ctx.fById.get(b.owner);
         if (f) f.sales.rent = (f.sales.rent ?? 0) + 1;
         u.arrears = 0;
@@ -128,6 +130,7 @@ export function housingDaily(ctx: Ctx): void {
         u.arrears++;
         if (u.arrears >= HOUSING.evictAfterDays) {
           log(ctx, 'home', `${p.name} was evicted for not paying rent.`, { who: p.id, bid: b.id });
+          tally(ctx, 'evicted', 1);
           moveOut(ctx, p);
         }
       }

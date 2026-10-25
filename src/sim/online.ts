@@ -28,6 +28,7 @@ import { doorOf } from './layout';
 import { curbSpot, route } from './roads';
 import { exitBuilding, leaveSeat, walkMinute } from './tasks';
 import { GATE, type Building, type Firm, type Good, type Person, type Shipment, type SiteKind, type Step, type Vehicle } from './types';
+import { tally } from './stats';
 
 type StepResult = 'wait' | 'instant' | 'minute';
 
@@ -110,6 +111,9 @@ export function placeOrder(ctx: Ctx, p: Person, step: Extract<Step, { k: 'order'
     if (cashOf(ctx, p.id) < total && step.good === 'cars') borrow(ctx, p.id, total * 1.05 - cashOf(ctx, p.id), 90, 'a car');
     if (cashOf(ctx, p.id) < total) { p.activity = 'card declined'; return; }
     addCash(ctx, p.id, -total); // the money leaves the city
+    tally(ctx, 'spend:' + step.good, step.price * step.qty);
+    tally(ctx, 'spend:online', total);
+    tally(ctx, 'imports', total);
     createShipment(ctx, p.id, GATE, home.id, goods, OUTSIDE.id, { recipient: p.id, device: step.device, after: nextShippingTime(ctx.s.tick, ONLINE.leadHours) });
     p.activity = `ordered ${step.good === 'cars' ? 'a car' : GOOD[step.good].label} online`;
     if (step.good === 'cars') log(ctx, 'buy', `${p.name} ordered a car online; it's coming on a truck.`, { who: p.id });
@@ -122,6 +126,8 @@ export function placeOrder(ctx: Ctx, p: Person, step: Extract<Step, { k: 'order'
   const total = price * step.qty;
   if (cashOf(ctx, p.id) < total + ONLINE.localDeliveryFee) return;
   addCash(ctx, p.id, -total);
+  tally(ctx, 'spend:' + step.good, total);
+  tally(ctx, 'spend:online', total);
   // the marketplace's commission comes out of the store's takings
   const market = ctx.fById.get(step.via);
   const commission = market ? total * (market.site?.fee ?? 0.08) : 0;
@@ -151,6 +157,8 @@ function orderMeal(ctx: Ctx, p: Person, step: Extract<Step, { k: 'order' }>, hom
   const price = f.prices.meal ?? step.price;
   if (!rest || cashOf(ctx, p.id) < price + ONLINE.mealDeliveryFee) return;
   addCash(ctx, p.id, -(price + ONLINE.mealDeliveryFee));
+  tally(ctx, 'spend:meal', price + ONLINE.mealDeliveryFee);
+  tally(ctx, 'spend:online', price + ONLINE.mealDeliveryFee);
   const commission = price * (app.site.fee ?? 0.18);
   addCash(ctx, f.id, price - commission);
   // the app holds the delivery fee until a courier delivers (then pays them most of it)

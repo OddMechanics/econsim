@@ -11,6 +11,7 @@ import { referenceWage } from './government';
 import { endContract } from './jobs';
 import { onFinished } from './hooks';
 import type { Building, BuildingKind, Firm } from './types';
+import { tally } from './stats';
 
 /** Vacant units of a kind ('shopfront' on ground floors, 'suite' office floors). */
 export function vacantUnits(ctx: Ctx, kind: 'shopfront' | 'suite'): Building[] {
@@ -92,6 +93,7 @@ export function leasesDaily(ctx: Ctx): void {
     if (cashOf(ctx, f.id) >= l.rent) {
       addCash(ctx, f.id, -l.rent);
       addCash(ctx, u.owner, l.rent);
+      tally(ctx, 'leases', l.rent);
       l.arrears = 0;
     } else if (++l.arrears >= 7) {
       vacate(ctx, u, 'evicted for unpaid rent');

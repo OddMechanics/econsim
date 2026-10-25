@@ -12,6 +12,7 @@ import { BUILDINGS, ROLE } from './goods';
 import { grievance, meet, relation } from './social';
 import { borrow } from './finance';
 import type { Contract, Firm, Person, Posting, Role } from './types';
+import { tally } from './stats';
 
 export function contractOf(ctx: Ctx, p: Person): Contract | undefined {
   return ctx.cById.get(p.job);
@@ -148,6 +149,7 @@ export function payShift(ctx: Ctx, c: Contract, fraction: number): void {
   const paid = Math.min(due, Math.max(0, cashOf(ctx, c.firm)));
   addCash(ctx, c.firm, -paid);
   addCash(ctx, p.id, paid);
+  tally(ctx, 'wages', paid);
   // the government at the workplace takes its income tax out of the pay
   withholdIncomeTax(ctx, ctx.bById.get(c.site), p, paid);
   const g = ctx.govOfFirm.get(c.firm);

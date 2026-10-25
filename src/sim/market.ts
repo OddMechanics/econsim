@@ -17,6 +17,7 @@ import { createShipment } from './logistics';
 import { introduce, knows } from './contacts';
 import { meet } from './social';
 import { GATE, GOODS, type Good, type Order, type Person } from './types';
+import { tally } from './stats';
 
 export function bestAsk(ctx: Ctx, good: Good, exclude = -1): Order | undefined {
   let best: Order | undefined;
@@ -71,8 +72,8 @@ function recordTrade(ctx: Ctx, good: Good, qty: number, price: number, buyer: nu
   m.trades.push({ t: ctx.s.tick, good, qty, price, buyer, seller });
   if (m.trades.length > MARKET.tradeMemory) m.trades.splice(0, m.trades.length - MARKET.tradeMemory);
   ctx.s.counters.trades++;
-  if (buyer === OUTSIDE.id) ctx.s.counters.exports = (ctx.s.counters.exports ?? 0) + 1;
-  if (seller === OUTSIDE.id) ctx.s.counters.imports = (ctx.s.counters.imports ?? 0) + 1;
+  if (buyer === OUTSIDE.id) { ctx.s.counters.exports = (ctx.s.counters.exports ?? 0) + 1; tally(ctx, 'exp:' + good, qty); tally(ctx, 'exports', qty * price); }
+  if (seller === OUTSIDE.id) { ctx.s.counters.imports = (ctx.s.counters.imports ?? 0) + 1; tally(ctx, 'imp:' + good, qty); tally(ctx, 'imports', qty * price); }
   for (const id of [buyer, seller]) {
     const p = ctx.byId.get(ctx.fById.get(id)?.owner ?? -1) ?? ctx.byId.get(ctx.fById.get(id)?.manager ?? -1);
     if (p) p.prices[good] = { p: price, t: ctx.s.tick, src: 'traded' };

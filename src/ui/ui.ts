@@ -22,6 +22,7 @@ import { LineChart } from './charts';
 import { CAT_LABEL, features, predict } from '../sim/brain';
 import { Net } from './net';
 import { TV } from './tv';
+import { StatsView } from './statsview';
 import { governmentHtml, personPoliticsHtml } from './politics';
 import { ageOf } from '../sim/ideology';
 import { mainPolity, referenceWage, treasury } from '../sim/government';
@@ -115,6 +116,7 @@ export class UI {
   private lastSaved = -1;
   private net: Net;
   private tv: TV;
+  private stats: StatsView;
   private polity = -1;
   /** The ad last clicked in the 3D view (its sponsor is selected; the inspector shows the ad too). */
   private pickedAd = -1;
@@ -142,6 +144,7 @@ export class UI {
       <button class="btn" data-act="map" title="Show city limits and electoral districts">Limits</button>
       <button class="btn" data-act="net" title="Browse the Net: websites and apps run by the city's internet companies">🌐 Net</button>
       <button class="btn" data-act="tv" title="Watch what's on TV">📺 TV</button>
+      <button class="btn" data-act="stats" title="Statistics: the economy, markets, people, housing, companies, government">📊 Stats</button>
       <span class="spacer"></span>
       <span class="muted small save-status"></span>
       <button class="btn" data-act="save" title="Download this world as a file">Save</button>
@@ -179,6 +182,7 @@ export class UI {
         this.renderer.follow = !this.renderer.follow;
       } else if (act === 'net') this.net.toggle();
       else if (act === 'tv') this.tv.toggle();
+      else if (act === 'stats') this.stats.toggle();
       else if (act === 'save') this.hooks.save();
       else if (act === 'load') this.hooks.load();
       else if (act === 'new') this.hooks.newWorld();
@@ -248,6 +252,7 @@ export class UI {
 
     this.net = new Net(sim, (kind, id) => this.selectAndFocus(kind, id), () => (this.renderer.selection?.type === 'person' ? this.renderer.selection.id : -1), () => this.renderer.selection);
     this.tv = new TV(sim, (kind, id) => this.selectAndFocus(kind, id));
+    this.stats = new StatsView(sim, (kind, id) => this.selectAndFocus(kind, id));
 
     const hint = document.createElement('div');
     hint.id = 'hint';
@@ -356,6 +361,7 @@ export class UI {
     this.sim = sim;
     this.net.setSim(sim);
     this.tv.setSim(sim);
+    this.stats.setSim(sim);
     this.polity = -1;
     this.select(null);
     this.chartsAt = -1;
@@ -477,6 +483,7 @@ export class UI {
     this.renderInspector();
     this.net.update();
     this.tv.update();
+    this.stats.update();
     if (this.lastSaved > 0) {
       const s = Math.round((now - this.lastSaved) / 1000);
       this.saveStatus.textContent = s < 5 ? 'Autosaved just now' : `Autosaved ${s < 60 ? s + 's' : Math.round(s / 60) + 'm'} ago`;

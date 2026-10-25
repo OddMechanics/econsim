@@ -10,6 +10,7 @@ import { housingDaily, moveIn, moveOut } from './housing';
 import { marketHourly, marketNewDay, outsideTrade, spoilFood } from './market';
 import { causeOfDeath, createPerson, personDaily, setBrainSource, spawnNewcomer, updateNeeds } from './people';
 import { ensurePlaces, placesDaily } from './places';
+import { recordDaily } from './stats';
 import { initRoads, makeAllLots, rezone } from './roads';
 import { seedRng } from './rng';
 import { scenariosDaily } from './scenarios';
@@ -296,6 +297,8 @@ export class Simulation {
     const s = ctx.s;
     // counters at the start of the day (so "today" can be shown)
     s.data = { ...(s.data ?? {}), ordersDay0: s.counters.orders ?? 0, gigsDay0: s.counters.gigs ?? 0, ridesDay0: s.counters.rides ?? 0, importsDay0: s.counters.imports ?? 0, exportsDay0: s.counters.exports ?? 0 };
+    // the day just ended, for the statistics window (before the markets start their new day)
+    recordDaily(ctx);
     regrowWorld(s.world);
     decayBuildings(ctx, (b) => this.onRuin(b));
     marketNewDay(ctx);

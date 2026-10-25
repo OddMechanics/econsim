@@ -22,6 +22,7 @@ import { addCash } from './ctx';
 import { ROLE } from './goods';
 import type { Building, Contract, Firm, Good, Person, Role, Step } from './types';
 import { findResource, resourceArray, workSpot, wildPath } from './world';
+import { tally } from './stats';
 
 type StepResult = 'wait' | 'instant' | 'minute';
 
@@ -216,6 +217,7 @@ function billClients(ctx: Ctx, f: Firm, role: Role): void {
   const full = ((referenceWage(ctx) * ROLE[role].pay * 1.7) / 480) * clock.dt * (0.6 + 0.8 * f.reputation) * (f.site ? 0.6 + f.site.quality : 1);
   const rate = full * (d['svcMult' + m] ?? 1);
   addCash(ctx, f.id, rate);
+  tally(ctx, 'svc:' + m, rate);
   d.svcToday += rate;
   d['svcFull' + m] = (d['svcFull' + m] ?? 0) + full;
   f.sales.billed = (f.sales.billed ?? 0) + rate;

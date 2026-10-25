@@ -601,3 +601,75 @@ table.trade tr.tot td { color: var(--text-muted); font-size: 11px; }
 .adrow-face small { font-weight: 400; font-size: 9px; opacity: 0.85; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .adrow-info { flex: 1; min-width: 0; font-size: 12px; }
 .meter .n { min-width: 34px; }
+
+/* -------------------------------------------------------- statistics window */
+#statswin { position: fixed; z-index: 6; top: 60px; left: 8px; right: 8px; bottom: 8px; display: flex; flex-direction: column;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,0.45); overflow: hidden; }
+.sv-head { display: flex; align-items: center; gap: 12px; padding: 8px 10px 0 14px; }
+.sv-name { font-weight: 650; }
+.sv-tabs { display: flex; gap: 2px; flex: 1; overflow-x: auto; }
+.sv-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; }
+.sv-tabs button:hover { color: var(--text-primary); }
+.sv-tabs button.on { color: var(--text-primary); border-bottom-color: var(--accent); }
+.sv-filters { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.sv-note { margin-left: auto; }
+.sv-content { flex: 1; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 12px; align-content: start; }
+.sv-wide { grid-column: 1 / -1; }
+.sv-section { font-weight: 600; font-size: 15px; padding: 8px 2px 0; }
+.sv-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.sv-card-h { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.sv-card-h > div { flex: 1; min-width: 0; }
+.sv-title { font-weight: 600; color: var(--text-primary); }
+.sv-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; line-height: 1.35; }
+.sv-tbl { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.sv-tbl:hover { color: var(--text-primary); background: var(--hover); }
+.sv-tbl.on { color: var(--text-primary); background: rgba(57, 135, 229, 0.2); }
+.sv-plot { position: relative; }
+.sv-plot canvas { width: 100%; height: 100%; display: block; }
+.sv-plot .tip { position: absolute; display: none; pointer-events: none; z-index: 2; min-width: 150px; max-width: 260px; font-size: 12px;
+  background: var(--panel-solid); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+.sv-plot .tip .tip-h, .sv-card .tip-h { color: var(--text-muted); font-size: 11px; margin-bottom: 3px; }
+.sv-plot .tip div { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); line-height: 1.6; }
+.sv-plot .tip b { margin-left: auto; padding-left: 12px; color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sv-plot .tip .tip-total { border-top: 1px solid var(--border); margin-top: 2px; }
+.key-line { display: inline-block; width: 12px; height: 2px; border-radius: 1px; vertical-align: middle; margin-right: 5px; }
+.key-rect { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+.legend .key-line, .legend .key-rect { margin-right: 5px; }
+.sv-table table, .sv-mtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.sv-table th, .sv-table td, .sv-mtable th, .sv-mtable td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.sv-table th, .sv-mtable th { color: var(--text-muted); font-weight: 500; }
+.sv-table .r, .sv-mtable .r { text-align: right; font-variant-numeric: tabular-nums; }
+.sv-mtable tr.sv-click { cursor: pointer; }
+.sv-mtable tr.sv-click:hover td { background: var(--hover); }
+.sv-mtable tr.on td { background: rgba(57, 135, 229, 0.14); }
+.sv-mtable th.sv-click { cursor: pointer; }
+.sv-mtable th.sv-click:hover { color: var(--text-primary); }
+.sv-mtable td { color: var(--text-secondary); }
+.sv-mtable td:first-child { color: var(--text-primary); }
+.sv-scroll { overflow-x: auto; }
+/* stat tiles */
+.sv-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.sv-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.sv-tile-l { font-size: 11.5px; color: var(--text-muted); }
+.sv-tile-v { font-size: 22px; font-weight: 600; margin: 2px 0; color: var(--text-primary); }
+.sv-tile-d { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+.sv-tile-d.up-good { color: var(--good); }
+.sv-tile-d.up-bad { color: var(--critical); }
+.sv-tile-d .muted { color: var(--text-muted); }
+.spark { display: block; }
+.sv-insights { margin: 0; padding-left: 4px; list-style: none; display: grid; gap: 5px; color: var(--text-secondary); font-size: 12.5px; }
+/* bars and columns */
+.sv-bar { display: grid; grid-template-columns: minmax(90px, 38%) 1fr auto; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 6px; font-size: 12px; }
+.sv-bar.link { cursor: pointer; }
+.sv-bar.link:hover { background: var(--hover); }
+.sv-bar-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-bar-track { height: 14px; display: flex; align-items: center; }
+.sv-bar-track i { display: block; height: 14px; border-radius: 0 4px 4px 0; }
+.sv-bar-val { color: var(--text-primary); font-variant-numeric: tabular-nums; min-width: 40px; text-align: right; }
+.sv-cols { display: flex; align-items: flex-end; gap: 10px; height: 170px; padding-top: 6px; }
+.sv-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
+.sv-col-bar { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
+.sv-col-bar i { display: block; width: min(24px, 70%); background: var(--series-1); border-radius: 4px 4px 0 0; }
+.sv-col-val { font-size: 11px; color: var(--text-primary); margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+.sv-col-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; }
+@media (max-width: 900px) { .sv-content { grid-template-columns: 1fr; } #statswin { right: 8px !important; } }

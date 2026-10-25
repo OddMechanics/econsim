@@ -171,6 +171,7 @@ export function buildMinute(ctx: Ctx, b: Building, worker: Person): boolean {
 }
 
 import { onFinished } from './hooks';
+import { tally } from './stats';
 export { onFinished };
 
 /** Finish a building whose work and materials are both complete. */
@@ -187,6 +188,7 @@ export function finishBuilding(ctx: Ctx, b: Building): void {
   b.ver++;
   const owner = ctx.byId.get(b.owner);
   for (const q of ctx.s.people) if (q.projectId === b.id) q.projectId = -1;
+  if (b.host === undefined) { tally(ctx, 'built', 1); tally(ctx, 'floors', b.floors); }
   if (TOWERS.includes(b.kind)) createHostedUnits(ctx, b);
   const what = b.floors > 2 ? `${b.floors}-floor ${BUILDINGS[b.kind].label.toLowerCase()}` : BUILDINGS[b.kind].label.toLowerCase();
   const firm = ctx.fById.get(b.firm);

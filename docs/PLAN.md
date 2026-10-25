@@ -197,6 +197,26 @@ What's new:
     - At most 40 + 1 per 20 residents arrive a day.
     - Test runs: day 120 = 2,490 and 3,031 people (before: 2,225 and 1,643), no deaths.
 
+98. **Statistics window** (📊 Stats; you asked for "way better statistics… graphs… also markets"):
+    - **Sections:** Overview (10 headline numbers with their 7-day change and a 30-day trend, "What changed this week" in plain sentences, the main charts), Economy, Markets (every good in a table; the chosen one in detail: price, quantities, open orders, biggest sellers and buyers), People, Housing & land, Companies (a sortable table of the biggest), Government, Net & media.
+    - **Data:** the city is summed up at the end of each game day (`recordDaily`). What happens during the day (spending by kind, imports and exports by good, office work billed, companies opened and closed, buildings finished, wages, rent, government income and spending) is tallied as it happens. The last ~1,000 days are kept day by day, older ones every other day. A day is about 4–5 KB of the save.
+    - **Definitions:**
+      - "out of work" = no job and no business of their own;
+      - "cost of a day's living" = 2 groceries + 0.05 clothes + 0.02 furniture + 0.01 electronics at shelf prices + a day's average rent;
+      - inflation = its change over 30 days;
+      - wealth = net worth (cash, goods, property, companies, minus debts), in bins under 10 / 100 / 1K / 10K / 100K / above.
+    - **Sectors:**
+      - Shops & restaurants (stores, restaurants, car dealers);
+      - Factories;
+      - Offices, finance & property (consulting, banks, property companies);
+      - Tech & media (internet companies, TV, ad companies);
+      - Construction;
+      - Logistics;
+      - Farms, forests & mines;
+      - Government.
+    - **Chart rules:** one y-axis per chart. Two measures on different scales go in separate charts, or are both indexed to 100 (wages against prices). Each chart has a hover readout and a table view, and colors follow the sector or series everywhere.
+    - **A bug the charts showed:** the resident dividend counted itself as spending, so it was only paid every other day. Fixed.
+
 Your rule for this (2026-10-24): nobody is forced to build a tower. Towers should come from people's and companies' own decisions in an urban economy; skyscrapers were never the goal in themselves.
 
 ### What a run looks like now (headless, final code apart from #93, 2026-10-24)

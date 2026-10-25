@@ -509,6 +509,8 @@ export interface Firm {
   prices: Partial<Record<Good | 'meal' | 'freight' | 'build' | 'rate', number>>;
   wages: Partial<Record<Role, number>>; // offered wage per shift for new hires
   ledger: Ledger;
+  /** Sales in its last full business day (for statistics). */
+  lastRevenue?: number;
   reputation: number; // 0..1
   sales: Record<string, number>; // today's units sold (goods, 'meal', 'freight', 'build')
   salesAvg: Record<string, number>; // recent daily average
@@ -1075,6 +1077,82 @@ export interface StatPoint {
   legit?: number;
 }
 
+/** Sectors of the economy (for jobs, companies and sales by sector). */
+export type Sector = 'retail' | 'manufacturing' | 'office' | 'tech' | 'construction' | 'logistics' | 'raw' | 'public';
+
+/** One market's day: wholesale trading, the rest of the world, shelves. */
+export interface MarketDay {
+  price: number; // average wholesale price traded (or the last price)
+  q: number; // quantity traded locally (company to company)
+  imp: number; // bought from outside
+  exp: number; // sold outside
+  retail?: number; // average shelf price in shops (consumer goods)
+  bids: number; // quantity wanted in open orders at day's end
+  asks: number; // quantity offered in open orders at day's end
+  makers: number; // local companies making it
+}
+
+/** A snapshot of the city at the end of each game day, plus what happened during it (see stats.ts). */
+export interface DailyStat {
+  day: number;
+  t: number;
+  // people
+  pop: number;
+  arrivals: number; // during the day
+  left: number;
+  deaths: number;
+  employed: number; // job contracts
+  owners: number; // people running a business of their own
+  jobless: number; // neither
+  homeless: number;
+  renters: number;
+  homeowners: number;
+  trailers: number;
+  online: number;
+  cars: number;
+  mood: number; // average 0..1
+  happy: number;
+  needs: { food: number; energy: number; social: number; fun: number; health: number };
+  // money
+  wage: { p10: number; median: number; mean: number; p90: number };
+  wealthGini: number;
+  top10: number; // share of all wealth held by the richest 10%
+  wealthBins: number[]; // people by wealth: <10, 10–100, 100–1k, 1k–10k, 10k–100k, 100k+
+  money: number; // money supply
+  cpi: number; // cost of a typical day's basket (food, things, rent)
+  // what happened in the day (money): see `tally`
+  flows: Record<string, number>;
+  // jobs, companies and sales by sector
+  jobs: Partial<Record<Sector, number>>;
+  firms: Partial<Record<Sector, number>>;
+  revenue: Partial<Record<Sector, number>>; // over the last business day
+  profitable: number; // companies that made money in their last business day
+  firmCash: number;
+  // markets
+  markets: Partial<Record<Good, MarketDay>>;
+  // housing and land
+  units: number; // flats
+  vacantUnits: number;
+  rent: number; // average rent of occupied flats
+  suites: number; // office floors in towers
+  vacantSuites: number;
+  shops: number; // shopfronts in towers
+  vacantShops: number;
+  building: number; // buildings under construction
+  towers: number;
+  tallest: number; // floors
+  land: Partial<Record<Zone, number>>; // average price per m² of lots for sale
+  // government (the main one)
+  treasury: number;
+  legit: number;
+  income: Record<string, number>; // yesterday, by kind
+  spend: Record<string, number>;
+  // the Net and media
+  adSpend: { street: number; net: number; tv: number; influencer: number };
+  siteUsers: number;
+  tvViewers: number;
+}
+
 export interface DeadPerson {
   id: number;
   name: string;
@@ -1123,6 +1201,10 @@ export interface SimState {
   conversations: Conversation[];
   posts: Post[];
   stats: StatPoint[];
+  /** One snapshot per game day (stats.ts), for the statistics window. */
+  daily?: DailyStat[];
+  /** Running totals for the current day (spending by kind, imports, exports…), reset each midnight. */
+  today?: Record<string, number>;
   log: LogEntry[];
   scenarios: ScenarioState[];
   counters: {

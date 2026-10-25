@@ -22,6 +22,7 @@ import { landHooks, layoutRoads, touchRoads } from './roads';
 import { permitHooks, startConstruction } from './construction';
 import { procureMaterials } from './firms';
 import type { Building, Charter, Firm, Lot, Office, Person, Polity, Policy, RoadEdge, Zone } from './types';
+import { tally } from './stats';
 
 // ------------------------------------------------------------------ territory
 
@@ -317,6 +318,8 @@ function book(ctx: Ctx, g: Polity, side: 'income' | 'spend', key: string, amount
   }
   const rec = g.fiscal[side];
   rec[key] = (rec[key] ?? 0) + amount;
+  // for the statistics window (all governments together, on the same day boundary as everything else)
+  tally(ctx, (side === 'income' ? 'gin:' : 'gsp:') + key, amount);
 }
 
 /** Income tax withheld from a wage paid at a site (to the government in control there). Returns the tax. */
@@ -584,7 +587,8 @@ export function buildCityHall(ctx: Ctx, g: Polity): Building | null {
  * the economy.
  */
 function windfall(ctx: Ctx, g: Polity): void {
-  const daily = Object.values(g.fiscal.prevSpend).reduce((s, x) => s + x, 0) + 20;
+  // what it normally spends a day (not counting yesterday's dividend itself, or it would only pay every other day)
+  const daily = Object.entries(g.fiscal.prevSpend).filter(([k]) => k !== 'resident dividend').reduce((s, [, x]) => s + x, 0) + 20;
   const excess = treasury(ctx, g) - daily * 60 - 2000;
   if (excess <= 0) return;
   const people = residentsOf(ctx, g);

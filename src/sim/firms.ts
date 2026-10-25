@@ -17,6 +17,7 @@ import { leaseUnit, vacantUnits, vacate } from './leases';
 import { referenceWage } from './government';
 import { planDevelopment, redevelop } from './development';
 import { serviceMarket, serviceRate } from './production';
+import { tally } from './stats';
 import { GOODS, type Building, type BuildingKind, type Firm, type Good, type Lot, type Person, type Role } from './types';
 
 export function sitesOf(ctx: Ctx, f: Firm): Building[] {
@@ -44,6 +45,7 @@ export function buildCost(_ctx: Ctx, p: Person, kind: BuildingKind, floors: numb
 }
 
 export function foundFirm(ctx: Ctx, founder: Person, kind: BuildingKind, lot: Lot, invest: number, floors = 1): Firm {
+  tally(ctx, 'founded', 1);
   const last = founder.name.split(' ')[1] ?? founder.name;
   const f: Firm = {
     id: newId(ctx), name: firmName(ctx.rng, kind, last), owner: founder.id, founded: ctx.s.tick, cash: 0, kind,
@@ -65,6 +67,7 @@ export function foundFirm(ctx: Ctx, founder: Person, kind: BuildingKind, lot: Lo
 
 /** A company that starts out in a leased unit (a shop in a tower, an office floor). */
 export function foundFirmIn(ctx: Ctx, founder: Person, kind: BuildingKind, unit: Building, invest: number): Firm | null {
+  tally(ctx, 'founded', 1);
   const last = founder.name.split(' ')[1] ?? founder.name;
   const f: Firm = {
     id: newId(ctx), name: firmName(ctx.rng, kind, last), owner: founder.id, founded: ctx.s.tick, cash: 0, kind,
@@ -95,6 +98,7 @@ export function foundFirmIn(ctx: Ctx, founder: Person, kind: BuildingKind, unit:
  * leave the city.
  */
 export function openBranch(ctx: Ctx, kind: BuildingKind, brand: string, lot: Lot, manager: Person, cash: number): Firm {
+  tally(ctx, 'founded', 1);
   const f: Firm = {
     id: newId(ctx), name: brand, owner: OUTSIDE.id, founded: ctx.s.tick, cash, kind,
     sites: [], prices: {}, wages: {}, ledger: { revenue: 0, costs: 0, days: [] }, reputation: 0.6,
@@ -315,6 +319,7 @@ export function firmDaily(ctx: Ctx, f: Firm): void {
   f.revenueAvg = 0.8 * (f.revenueAvg ?? f.ledger.revenue) + 0.2 * f.ledger.revenue;
   f.ledger.days.push(profit);
   if (f.ledger.days.length > 14) f.ledger.days.shift();
+  f.lastRevenue = f.ledger.revenue;
   f.ledger.revenue = 0;
   f.ledger.costs = 0;
   f.losing = profit < 0 ? f.losing + 1 : 0;
@@ -550,6 +555,7 @@ function billClients(ctx: Ctx, f: Firm): void {
     const paid = Math.min(bill, Math.max(0, cashOf(ctx, b.owner)));
     addCash(ctx, b.owner, -paid);
     addCash(ctx, f.id, paid);
+    tally(ctx, 'construction', paid);
     b.due -= paid;
     b.billedWork = b.workDone;
   }
@@ -724,6 +730,7 @@ function bestOpportunity(ctx: Ctx, f: Firm): BuildingKind | null {
  * company's owner (a person, a bank, a government), who may sell them.
  */
 export function closeFirm(ctx: Ctx, f: Firm, why: string, quiet = false): void {
+  if (!f.closed) tally(ctx, 'closed', 1);
   f.closed = true;
   for (const c of ctx.s.contracts.filter((c) => c.firm === f.id)) {
     ctx.s.contracts = ctx.s.contracts.filter((x) => x !== c);
