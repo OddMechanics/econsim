@@ -16,6 +16,7 @@ import { firmValue, SECTORS, sectorOf, wealthOf } from '../sim/stats';
 import { GOODS, type DailyStat, type Good, type Sector } from '../sim/types';
 import { BarList, Columns, compact, DepthChart, DivergingBars, percent, RankedBars, type Series, sparkline, TimeChart, whole } from './statcharts';
 import { adsParts, politicsParts } from './statspolitics';
+import { morphHTML, morphNodes } from './morph';
 
 type Section = 'overview' | 'economy' | 'markets' | 'people' | 'housing' | 'companies' | 'politics' | 'government' | 'ads' | 'net';
 const SECTIONS: [Section, string][] = [
@@ -215,7 +216,7 @@ export class StatsView {
       const arrow = dir > 0 ? '▲' : dir < 0 ? '▼' : '•';
       return `<div class="sv-tile"><div class="sv-tile-l">${label}</div><div class="sv-tile-v">${fmt(v)}</div><div class="sv-tile-d ${good}">${arrow} ${dir === 0 ? 'no change' : `${rel >= 0 ? '+' : ''}${(rel * 100).toFixed(Math.abs(rel) < 0.1 ? 1 : 0)}%`} <span class="muted">vs 7 days ago</span></div>${sparkline(last30.map(f))}</div>`;
     };
-    host.innerHTML = [
+    morphHTML(host, [
       tile('Population', (d) => d.pop, whole, true),
       tile('Jobs', (d) => d.employed, whole, true),
       tile('Out of work', (d) => d.jobless / Math.max(1, d.pop), percent, false),
@@ -226,7 +227,7 @@ export class StatsView {
       tile('Companies', (d) => Object.values(d.firms).reduce((a, n) => a + (n ?? 0), 0), whole, true),
       tile('Treasury', (d) => d.treasury, compact, true),
       tile('Homeless', (d) => d.homeless, whole, false),
-    ].join('');
+    ].join(''));
   }
 
   /** Plain sentences about the biggest changes of the week. */
@@ -263,7 +264,7 @@ export class StatsView {
     items.push(vac < 0.03 ? `▲ Flats are scarce: only ${percent(vac)} stand empty${now.homeless ? `, and ${now.homeless} people are homeless` : ''}.` : `• ${percent(vac)} of flats stand empty; the average rent is ${compact(now.rent)} a day.`);
     if (now.building) items.push(`• ${now.building} buildings are going up; ${whole(sum((d) => d.flows.built ?? 0))} were finished this week.`);
     if (ago.treasury) items.push(`${now.treasury >= ago.treasury ? '▲' : '▼'} The treasury went from ${compact(ago.treasury)} to ${compact(now.treasury)}.`);
-    list.replaceChildren(...items.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+    morphNodes(list, items.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
   }
 
   private economy(): Part[] {
@@ -300,6 +301,7 @@ export class StatsView {
     table.className = 'sv-card sv-wide';
     table.innerHTML = '<div class="sv-card-h"><div><div class="sv-title">All markets</div><div class="sv-sub">Wholesale trading between companies, with the rest of the world, and in the shops (yesterday). Click a row to see that market in detail below.</div></div></div><div class="sv-scroll"></div>';
     const host = table.querySelector('.sv-scroll') as HTMLDivElement;
+    host.addEventListener('click', (e) => { const r = (e.target as HTMLElement).closest('[data-good]') as HTMLElement | null; if (r) { this.good = r.dataset.good as Good; this.fill(true); } });
     const title = document.createElement('div');
     title.className = 'sv-section sv-wide';
     const price = new TimeChart('Price', 'The average wholesale price companies paid each other, and the average shelf price in shops.', { free: true });
@@ -344,7 +346,7 @@ export class StatsView {
       const m = now?.markets[g];
       const row = document.createElement('tr');
       row.className = 'sv-click' + (g === this.good ? ' on' : '');
-      row.addEventListener('click', () => { this.good = g; this.fill(true); });
+      row.dataset.good = g;
       const p0 = week?.markets[g]?.price ?? 0, p1 = m?.price ?? 0;
       const ch = p0 > 0 && p1 > 0 ? (p1 - p0) / p0 : 0;
       const cells: (string | Node)[] = [goodName(g), p1 ? compact(p1) : '—', p0 && p1 ? `${ch >= 0 ? '+' : ''}${(ch * 100).toFixed(0)}%` : '—', '', m ? whole(m.q) : '—', m ? whole(m.imp) : '—', m ? whole(m.exp) : '—', m ? whole(m.bids) : '—', m ? whole(m.asks) : '—', m ? String(m.makers) : '—', m?.retail ? compact(m.retail) : '—'];
@@ -357,7 +359,7 @@ export class StatsView {
       });
       t.appendChild(row);
     }
-    host.replaceChildren(t);
+    morphNodes(host, [t]);
   }
 
   private people(): Part[] {
@@ -371,7 +373,7 @@ export class StatsView {
       for (const c of s.contracts) { const e = by.get(c.role) ?? { n: 0, open: 0, wages: [] }; e.n++; e.wages.push(c.wage); by.set(c.role, e); }
       for (const p of s.postings) { const e = by.get(p.role) ?? { n: 0, open: 0, wages: [] }; e.open += p.openings ?? 1; by.set(p.role, e); }
       const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n).map(([role, e]) => { e.wages.sort((a, b) => a - b); return `<tr><td>${ROLE[role as keyof typeof ROLE]?.label ?? role}</td><td class="r">${whole(e.n)}</td><td class="r">${whole(e.open)}</td><td class="r">${e.wages.length ? compact(e.wages[Math.floor(e.wages.length / 2)]) : '—'}</td></tr>`; });
-      roles.innerHTML = `<div class="sv-card-h"><div><div class="sv-title">Jobs by role (now)</div><div class="sv-sub">People employed in each kind of job, open positions, and the middle wage per shift.</div></div></div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Role</th><th class="r">Employed</th><th class="r">Open</th><th class="r">Median wage</th></tr>${rows.join('')}</table></div>`;
+      morphHTML(roles, `<div class="sv-card-h"><div><div class="sv-title">Jobs by role (now)</div><div class="sv-sub">People employed in each kind of job, open positions, and the middle wage per shift.</div></div></div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Role</th><th class="r">Employed</th><th class="r">Open</th><th class="r">Median wage</th></tr>${rows.join('')}</table></div>`);
     };
     const wealthCols = new Columns('How wealth is spread (now)', 'People by net worth: cash, goods, property and companies, minus debts.');
     const lorenz = new TimeChart('Inequality curve (now)', 'Share of all wealth held by the poorest X% of people. The further the curve sags below the straight line, the more unequal.', { fmt: percent, fmtX: (i) => `poorest ${i * 5}%` });
@@ -450,6 +452,13 @@ export class StatsView {
     table.innerHTML = '<div class="sv-card-h"><div><div class="sv-title">Biggest companies (now)</div><div class="sv-sub">Sorted by the column you click. Click a company to open it.</div></div></div><div class="sv-scroll"></div>';
     const host = table.querySelector('.sv-scroll') as HTMLDivElement;
     let sortBy = 3;
+    host.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const th = t.closest('[data-sort]') as HTMLElement | null;
+      if (th) { sortBy = Number(th.dataset.sort); fillTable(); return; }
+      const r = t.closest('[data-firm]') as HTMLElement | null;
+      if (r) this.onSelect('firm', Number(r.dataset.firm));
+    });
     const employers = new BarList('Biggest employers (now)', 'People on the payroll.', whole);
     const sectorProfit = new DivergingBars('Profits by sector (yesterday)', 'All companies\' profit or loss in their last business day, added up by sector.', 'loss', 'profit', compact, 'var(--div-pos)', 'var(--div-neg)');
     const ranked = new RankedBars('Profit or loss of every company (yesterday)', 'One thin bar per company, from the biggest loss to the biggest profit in its last business day. Hover to see which; click to open it.', compact, (id) => this.onSelect('firm', id));
@@ -460,6 +469,13 @@ export class StatsView {
       <div class="sv-filterrow"><input class="sv-search" placeholder="Search companies…"><div class="group sv-chips"><button data-sec="" class="on">All</button>${SECTORS.map((sec) => `<button data-sector="${sec}">${SECTOR_LABEL[sec]}</button>`).join('')}</div></div><div class="sv-scroll sv-tall"></div>`;
     const ehost = earnings.querySelector('.sv-tall') as HTMLDivElement;
     let esort = 5, esector = '', equery = '';
+    ehost.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const th = t.closest('[data-sort]') as HTMLElement | null;
+      if (th) { esort = Number(th.dataset.sort); fillEarnings(); return; }
+      const r = t.closest('[data-firm]') as HTMLElement | null;
+      if (r) this.onSelect('firm', Number(r.dataset.firm));
+    });
     earnings.querySelector('.sv-search')!.addEventListener('input', (e) => { equery = (e.target as HTMLInputElement).value.toLowerCase(); fillEarnings(); });
     earnings.querySelector('.sv-chips')!.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
@@ -487,14 +503,14 @@ export class StatsView {
         const th = document.createElement('th');
         th.textContent = h + (i === esort ? ' ▾' : '');
         th.className = (i > 2 && i !== 6 ? 'r ' : '') + (i === 6 ? '' : 'sv-click');
-        if (i !== 6) th.addEventListener('click', () => { esort = i; fillEarnings(); });
+        if (i !== 6) th.dataset.sort = String(i);
         tr.appendChild(th);
       });
       t.appendChild(tr);
       for (const r of rows) {
         const row = document.createElement('tr');
         row.className = 'sv-click';
-        row.addEventListener('click', () => this.onSelect('firm', r.f.id));
+        row.dataset.firm = String(r.f.id);
         r.cells.forEach((c, i) => {
           const td = document.createElement('td');
           if (i === 6) td.innerHTML = sparkline(r.hist.slice(-30), 80, 18);
@@ -508,7 +524,7 @@ export class StatsView {
       const note = document.createElement('p');
       note.className = 'muted small';
       note.textContent = `${rows.length} companies`;
-      ehost.replaceChildren(note, t);
+      morphNodes(ehost, [note, t]);
     };
     const conc = new BarList('How concentrated each sector is (now)', 'The biggest company\'s share of its sector\'s sales. Near 100%: one company dominates.', percent, 'var(--series-2)');
     const fillTable = () => {
@@ -526,18 +542,18 @@ export class StatsView {
         const th = document.createElement('th');
         th.textContent = h + (i === sortBy ? ' ▾' : '');
         th.className = (i > 1 ? 'r ' : '') + 'sv-click';
-        th.addEventListener('click', () => { sortBy = i; fillTable(); });
+        th.dataset.sort = String(i);
         tr.appendChild(th);
       });
       t.appendChild(tr);
       for (const r of rows.slice(0, 30)) {
         const row = document.createElement('tr');
         row.className = 'sv-click';
-        row.addEventListener('click', () => this.onSelect('firm', r.f.id));
+        row.dataset.firm = String(r.f.id);
         r.cells.forEach((c, i) => { const td = document.createElement('td'); td.textContent = typeof c === 'number' ? (i === 2 ? whole(c) : compact(c)) : c; if (i > 1) td.className = 'r'; row.appendChild(td); });
         t.appendChild(row);
       }
-      host.replaceChildren(t);
+      morphNodes(host, [t]);
     };
     return [
       this.chart('Companies by sector', 'How many companies there are in each sector. Stacked: the top edge is all companies.', (d) => this.sectorSeries(d, (x) => x.firms), { kind: 'stacked' }),

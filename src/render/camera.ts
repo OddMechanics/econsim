@@ -456,6 +456,8 @@ export class CameraController {
       case 'walk': this.updateWalk(dt); break;
     }
     if (this._mode !== 'walk') cam.panningSensibility = clamp(10400 / Math.max(3, cam.radius), 4, 4000);
+    // the near plane follows the viewing distance: precise depth from far away (no flickering ground), close shots still work
+    cam.minZ = this._mode === 'walk' ? 0.2 : clamp(cam.radius * 0.008, 0.2, 4);
     if (this.captionTimer > 0) {
       this.captionTimer -= dt;
       if (this.captionTimer <= 0 && this.captionEl) this.captionEl.style.opacity = '0.45';

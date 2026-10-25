@@ -5,6 +5,8 @@
 // table view for every chart. Colors come from the --series-N tokens and
 // always follow the entity (a sector or good keeps its color).
 
+import { morphNodes } from './morph';
+
 export interface Series {
   name: string;
   color: string;
@@ -67,7 +69,7 @@ function fillTable(host: HTMLElement, head: string[], rows: (string | number)[][
     r.forEach((c, i) => { const td = document.createElement('td'); td.textContent = String(c); if (i) td.className = 'r'; row.appendChild(td); });
     t.appendChild(row);
   }
-  host.replaceChildren(t);
+  morphNodes(host, [t]);
 }
 
 // ------------------------------------------------------------- time charts
@@ -325,19 +327,27 @@ export class BarList {
   readonly el: HTMLDivElement;
   private body: HTMLDivElement;
   private tableHost: HTMLDivElement;
+  private bars: Bar[] = [];
   constructor(title: string, sub: string, private fmt: Fmt = compact, private color = 'var(--series-1)') {
     const c = card(title, sub);
     this.el = c.el;
     this.body = c.body;
     this.tableHost = c.table;
+    // clicks are handled here (rows are reused when the list refreshes)
+    this.body.addEventListener('click', (e) => {
+      const row = (e.target as HTMLElement).closest('[data-i]') as HTMLElement | null;
+      if (row) this.bars[Number(row.dataset.i)]?.onClick?.();
+    });
   }
 
   set(bars: Bar[], max = 10): void {
     const list = bars.slice(0, max);
+    this.bars = list;
     const top = Math.max(1e-9, ...list.map((b) => b.value));
-    const rows = list.map((b) => {
+    const rows = list.map((b, i) => {
       const row = document.createElement('div');
       row.className = 'sv-bar' + (b.onClick ? ' link' : '');
+      row.dataset.i = String(i);
       const name = document.createElement('span');
       name.className = 'sv-bar-name';
       name.textContent = b.label;
@@ -352,10 +362,9 @@ export class BarList {
       val.textContent = this.fmt(b.value);
       row.append(name, track, val);
       row.title = `${b.label}: ${this.fmt(b.value)}${b.note ? ` (${b.note})` : ''}`;
-      if (b.onClick) row.addEventListener('click', b.onClick);
       return row;
     });
-    this.body.replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Nothing yet.' })]));
+    morphNodes(this.body, rows.length ? rows : [Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Nothing yet.' })]);
     fillTable(this.tableHost, ['', 'Value'], bars.map((b) => [b.label, this.fmt(b.value)]));
   }
 }
@@ -396,7 +405,7 @@ export class Columns {
       col.append(stack, l);
       wrap.appendChild(col);
     }
-    this.body.replaceChildren(wrap);
+    morphNodes(this.body, [wrap]);
     fillTable(this.tableHost, ['', 'Count'], cols.map((c) => [c.label, this.fmt(c.value)]));
   }
 }
@@ -721,7 +730,7 @@ export class DivergingBars {
       el.title = `${row.label}: ${(row.value > 0 ? '+' : '') + this.fmt(row.value)}`;
       els.push(el);
     }
-    this.body.replaceChildren(...els);
+    morphNodes(this.body, els);
     fillTable(this.tableHost, ['', 'Value'], rows.map((x) => [x.group ? `${x.group}: ${x.label}` : x.label, this.fmt(x.value)]));
   }
 }

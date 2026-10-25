@@ -23,6 +23,7 @@ import { CAT_LABEL, features, predict } from '../sim/brain';
 import { Net } from './net';
 import { TV } from './tv';
 import { StatsView } from './statsview';
+import { morphElement, morphHTML } from './morph';
 import { governmentHtml, personPoliticsHtml } from './politics';
 import { ageOf } from '../sim/ideology';
 import { mainPolity, referenceWage, treasury } from '../sim/government';
@@ -547,7 +548,12 @@ export class UI {
         this.body.innerHTML = tileHtml;
         for (const c of this.charts) this.body.appendChild(c.el);
         this.chartsAt = -1;
-      } else this.body.querySelector('.tiles')!.outerHTML = tileHtml;
+      } else {
+        // patch the tiles in place (replacing them would make whatever is under the mouse blink)
+        const tpl = document.createElement('template');
+        tpl.innerHTML = tileHtml;
+        morphElement(this.body.querySelector('.tiles')!, tpl.content.firstElementChild!);
+      }
       if (this.chartsAt !== s.stats.length) {
         this.chartsAt = s.stats.length;
         const st = s.stats;
@@ -569,9 +575,8 @@ export class UI {
     else if (this.tab === 'gov') html = governmentHtml(this.sim.ctx, this.polity, (id) => this.personLink(id), (id) => `<span class="link" data-watch="${id}" title="Follow the speaker with the movie camera">🎬 watch</span>`);
     else if (this.tab === 'talk') html = this.talkHtml();
     else html = this.logHtml();
-    const scroll = this.body.scrollTop;
-    this.body.innerHTML = html;
-    this.body.scrollTop = scroll;
+    // patched in place: hover, selection and scroll survive the refresh
+    morphHTML(this.body, html);
   }
 
   private dot(p: Person): string {
@@ -739,9 +744,9 @@ export class UI {
     const scroll = this.right.querySelector('.panel-body')?.scrollTop ?? 0;
     const html = sel.type === 'person' ? this.personHtml(sel.id) : sel.type === 'building' ? this.buildingHtml(sel.id) : this.firmHtml(sel.id);
     if (!html) { this.right.innerHTML = ''; return; }
-    this.right.innerHTML = html;
+    morphHTML(this.right, html);
     const body = this.right.querySelector('.panel-body');
-    if (body) body.scrollTop = scroll;
+    if (body && body.scrollTop !== scroll) body.scrollTop = scroll;
   }
 
   private meter(label: string, v: number, color = 'var(--accent)'): string {

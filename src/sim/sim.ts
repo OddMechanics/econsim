@@ -1,7 +1,7 @@
 import { MINUTES_PER_DAY, OUTSIDE, POLITICS, POPULATION, STATS, WAGES } from './config';
 import { dayOf, hourOf, log, makeCtx, minuteOfDay, type Ctx } from './ctx';
 import { decide, reviewJob } from './ai';
-import { createBuilding, decayBuildings } from './buildings';
+import { createBuilding, decayBuildings, gradeLot } from './buildings';
 import { onFinished, sellHooks } from './hooks';
 import { slotsFor } from './goods';
 import { chainsDaily, firmDaily, firmHourly, foundFirm, openBranch } from './firms';
@@ -222,6 +222,11 @@ export class Simulation {
   stride = 5;
   constructor(public state: SimState) {
     this.ctx = makeCtx(state);
+    // cities from before sites were graded: level the ground under every building once
+    if (!state.data?.graded) {
+      for (const l of state.roads.lots) if (l.building >= 0) gradeLot(this.ctx, l);
+      state.data = { ...(state.data ?? {}), graded: 1 };
+    }
   }
 
   get tick(): number {

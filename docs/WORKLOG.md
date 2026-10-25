@@ -293,3 +293,7 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   selection never opened buildings) and some really were (software firms held at zero staff; idle leased units kept).
   Fixed both. "The richest person is digging clay": owners' own-work ignored the value of money; fixed (wealthy owners
   hire/oversee; early retirement).
+- User: rich people still took small jobs; screens with few ads showed "Advertise here"; the world and the side panel
+  flickered. Fixes: `cushionDays` gates side work, manual job search and keeping a manual job (ai.ts); screens rotate booked
+  ads only (render + exposure); camera near plane follows the radius; `gradeLot` levels lots (terrain mesh follows via
+  `world.hver`); `morph.ts` patches panels in place (side panel, inspector, Net, TV, statistics with delegated clicks).

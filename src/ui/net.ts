@@ -25,6 +25,7 @@ import { officeDemand, residentialDemand } from '../sim/development';
 import { nextShippingTime } from '../sim/logistics';
 import type { Simulation } from '../sim/sim';
 import { GOODS, type Building, type BuildingKind, type Firm, type Good, type Person, type Post, type Role, type Shipment, type SiteKind } from '../sim/types';
+import { morphHTML } from './morph';
 import {
   ago, bannerAd, boxAd, cash, count, eduLabel, esc, feedAd, first, GOOD_ICON, goodLabel, handle, hash01, hhmm, hsl, pct, pickAds, prerollAd,
   searchAd, sellsAds, streetOf, today, until, type Advertiser,
@@ -223,7 +224,8 @@ export class Net {
     }
     if (!force && html === this.lastHtml) return;
     this.lastHtml = html;
-    this.body.innerHTML = html;
+    // a new page replaces the old one; the same page refreshing is patched in place (no blinking under the mouse)
+    if (force) this.body.innerHTML = html; else morphHTML(this.body, html);
     this.body.scrollTop = scroll;
   }
 

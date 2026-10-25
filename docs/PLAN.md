@@ -243,6 +243,16 @@ What's new:
     - (People already value money less as they get richer; working at their own company was the one choice that ignored it.)
 102. **Leased offices are staffed:** software and consulting firms keep a core team (3 programmers / 2 clerks per site) whatever their export market does, and only lease more space while their market pays full price. A leased shop or office floor with nobody employed for 5 business days is given back (if the company has another site). The 3D view shows people on leased floors when their tower or company is selected, and a tower's panel counts everyone inside.
 
+103. **Small jobs don't pay off for the comfortably off** (you: "they shouldn't feel rewarded by doing simple jobs"). Measured in days of pay saved (money ÷ the reference wage):
+    - over 60: no day labor or gig work;
+    - over 200: no manual or low-skill jobs, and anyone in one leaves it (20% a day). The ambitious can still take professional jobs: manager, programmer, clerk, journalist, official.
+    - The unemployment bonus and the pull of job security shrink as 1 ÷ (1 + days saved ÷ 40).
+104. **Screens rotate only booked ads** (in the 3D view and in who sees them), evenly; "Advertise here" shows only on a screen with nothing booked. Ad companies discount 2% a day while under 70% of their spaces are rented.
+105. **Less flicker:**
+    - The camera's near plane follows the viewing distance (0.8% of it, 0.2–4 m).
+    - Building sites level the ground: terrain tiles whose centers lie inside a lot take the height of its center. Older cities are leveled once on load.
+    - Panels (side panel, inspector, Net, TV, statistics) are patched in place instead of rebuilt, so what's under the mouse doesn't blink.
+
 Your rule for this (2026-10-24): nobody is forced to build a tower. Towers should come from people's and companies' own decisions in an urban economy; skyscrapers were never the goal in themselves.
 
 ### What a run looks like now (headless, final code apart from #93, 2026-10-24)

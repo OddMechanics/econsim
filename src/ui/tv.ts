@@ -14,6 +14,7 @@ import { SHOWS } from '../sim/media';
 import type { Simulation } from '../sim/sim';
 import type { Broadcast, Firm, Person } from '../sim/types';
 import { SKIN } from '../render/palette';
+import { morphHTML } from './morph';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const hsl = (h: number, s = 55, l = 45) => `hsl(${Math.round(h * 360)} ${s}% ${l}%)`;
@@ -123,13 +124,13 @@ export class TV {
     } else this.setScreen(`off:${f.id}`, () => this.offAir(f));
     const recent = this.sim.state.broadcasts.filter((b) => b.channel === f.id && b.id !== ch.onAir).slice(-8).reverse();
     const owner = ctx.byId.get(f.owner);
-    this.info.innerHTML = `${watcher ? this.watchingWith(watcher, f, now, frame) : ''}
+    morphHTML(this.info, `${watcher ? this.watchingWith(watcher, f, now, frame) : ''}
       <div class="nw-site" style="--brand:${hsl(f.hue)}"><div class="nw-hero"><h2>${esc(ch.name)}</h2>
       <div>${now ? `ON AIR: ${esc(now.show)}` : 'off the air right now'}</div>
       <div class="nw-sub" style="color:#fffc">owned by ${esc(nameOf(ctx, f.owner))} · editorial line ${compassLabel(ch.slant, ch.slantAuth)} · ${ch.viewers} viewers yesterday · ads ${ch.adPrice.toFixed(0)}/day</div></div>
       ${now ? this.broadcast(now, true) : '<p class="nw-sub">Shows air 7–9, 12–14 and 18–23 when a presenter is in the studio.</p>'}
       ${recent.length ? `<h3>Earlier</h3>${recent.map((b) => this.broadcast(b, false)).join('')}` : ''}
-      ${owner ? `<p><button class="nw-link" data-select="firm:${f.id}">show the station in the city</button></p>` : ''}</div>`;
+      ${owner ? `<p><button class="nw-link" data-select="firm:${f.id}">show the station in the city</button></p>` : ''}</div>`);
     this.body.scrollTop = scroll;
   }
 

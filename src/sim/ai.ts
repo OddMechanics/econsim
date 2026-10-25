@@ -33,7 +33,7 @@ import { planDevelopment } from './development';
 import { gigOutlook, isOnline, onlineStores, outsideRetailPrice, pendingDeliveries, siteOf } from './online';
 import { govSite, mainPolity, polityOf, referenceWage } from './government';
 import { askAround, ensurePlaces, knownOf, learnPlace, searchFor } from './places';
-import { GOODS, type Building, type Crowdfund, type DecisionOption, type Firm, type Good, type Person, type Step } from './types';
+import { GOODS, type Building, type Crowdfund, type DecisionOption, type Firm, type Good, type Person, type Role, type Step } from './types';
 
 interface Option extends DecisionOption {
   steps: () => Step[] | null;
@@ -99,6 +99,17 @@ function makeView(ctx: Ctx, p: Person): View {
     online: isOnline(p),
   };
 }
+
+/**
+ * How much they need to work for money: days of pay they have saved. People
+ * with a cushion don't feel rewarded by small jobs the way people without one
+ * do: they skip day labor and gig work, don't look for manual or low-skill
+ * jobs, and leave such a job once they can afford to.
+ */
+function cushionDays(ctx: Ctx, p: Person): number {
+  return Math.max(0, p.money) / Math.max(1, referenceWage(ctx));
+}
+const MANUAL = new Set<Role>(['farmhand', 'logger', 'quarrier', 'miner', 'worker', 'cashier', 'cook', 'waiter', 'driver', 'builder']);
 
 /** A plan that failed recently (e.g. no land) waits before being tried again. */
 function cooling(v: View, key: string): boolean {
@@ -448,6 +459,7 @@ function jobOptions(v: View, bestSide: number): Option[] {
   if (checking) {
     // what each opening they could do would be worth to them
     const fits: { post: (typeof ctx.s.postings)[number]; site: Building; label: string; value: number }[] = [];
+    const cushion = cushionDays(ctx, p);
     for (const post of ctx.s.postings) {
       if (post.applicants.includes(p.id)) continue;
       const f = ctx.fById.get(post.firm);
@@ -455,6 +467,8 @@ function jobOptions(v: View, bestSide: number): Option[] {
       if (!f || !site || f.owner === p.id) continue;
       // employers want the schooling a job needs (a bit of slack)
       if (p.edu < ROLE[post.role].edu - 1) continue;
+      // comfortably off: no manual or low-skill work (a career job can still appeal to the ambitious)
+      if (MANUAL.has(post.role) && cushion > 200) continue;
       // distance matters: a long commute eats into the day
       const commute = v.home ? Math.hypot(site.x - v.home.x, site.y - v.home.y) / (p.car >= 0 ? MOVE.car : MOVE.walk) / 60 : 0;
       fits.push({ post, site, label: `${ROLE[post.role].label} at ${f.name}`, value: post.wage - commute * 2 * p.hourly + Math.min(4, (p.skills[post.role] ?? 0) / 40) });
@@ -472,14 +486,16 @@ function jobOptions(v: View, bestSide: number): Option[] {
     }
     const minimum = c ? c.wage * 1.25 : 0;
     if (best && best.wage > minimum) {
-      const rate = v.mv * best.wage / 8 - v.effort + 0.3 * (1 - p.traits.risk);
+      // a steady wage matters less the more they have put by
+      const need = 1 / (1 + cushionDays(ctx, p) / 40);
+      const rate = v.mv * best.wage / 8 - v.effort + 0.3 * (1 - p.traits.risk) * need;
       if (rate > bestSide * 1.05 || (!c && rate > bestSide * 0.8)) {
         const postId = best.id;
         const site = best.site;
         const online = !!board;
         out.push({
           label: `Apply: ${best.label}`,
-          score: cap(rate + (c ? 0 : 0.6)),
+          score: cap(rate + (c ? 0 : 0.6 * need)),
           why: `pays about ${best.wage.toFixed(0)} a shift${c ? ' (more than now)' : ''}${online ? `, applying on ${board?.site?.name ?? 'the Net'}` : ''}`,
           steps: () => (online ? [{ k: 'apply', posting: postId }] : [go(site), { k: 'apply', posting: postId }]),
         });
@@ -532,6 +548,8 @@ function sideWorkOptions(v: View): Option[] {
   const out: Option[] = [];
   if (p.job >= 0 && ctx.cById.get(p.job)?.lastShiftDay !== dayOf(ctx.s.tick) && v.hour < 17) return out;
   if (p.firms.length) return out;
+  // with two months' pay put by, a few hours of day labor or deliveries just isn't worth it to them
+  if (cushionDays(ctx, p) > 60) return out;
   // day labor: builders take on a few extra hands at their sites (from early morning)
   if (p.job < 0 && v.hour >= 6 && v.hour < 13) {
     let site: Building | undefined, bd = Infinity, slot: { n: number } | undefined;
@@ -1244,6 +1262,8 @@ export function reviewJob(ctx: Ctx, p: Person): void {
   const c = ctx.cById.get(p.job);
   if (!c || c.noticeEnd > 0) return;
   if (c.unpaid >= 2) quit(ctx, c, 'not being paid');
+  // comfortably off in a manual or low-skill job: they leave it
+  else if (MANUAL.has(c.role) && cushionDays(ctx, p) > 200 && ctx.rng.chance(0.2)) quit(ctx, c, `can afford not to work as a ${ROLE[c.role].label} any more`);
   // enough saved that the pay no longer matters: the less ambitious retire early
   else if (p.money > 150 * c.wage && p.traits.ambition < 0.65 && ctx.rng.chance(0.08)) quit(ctx, c, "retiring: doesn't need the money any more");
 }

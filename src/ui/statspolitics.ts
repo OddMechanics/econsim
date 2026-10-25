@@ -14,6 +14,7 @@ import { mainPolity } from '../sim/government';
 import type { Simulation } from '../sim/sim';
 import { wealthOf } from '../sim/stats';
 import type { AdChannel, AdLogEntry, DailyStat, Election, Person, Polity } from '../sim/types';
+import { morphHTML } from './morph';
 import { BarList, card, Columns, CompassChart, compact, DivergingBars, type Dot, type Marker, percent, type Series, whole } from './statcharts';
 
 export interface Part { el: HTMLElement; update: (days: DailyStat[], x: number[]) => void }
@@ -118,10 +119,10 @@ export function politicsParts(sim: () => Simulation, h: Helpers): Part[] {
     // the main government in full, then every government that's campaigning, then the rest briefly
     const campaigning = govs.slice(1).filter((g) => open.some((e) => e.polity === g.id));
     const quiet = govs.slice(1).filter((g) => !campaigning.includes(g));
-    glance.innerHTML = `<div class="sv-card-h"><div><div class="sv-title">Elections at a glance</div><div class="sv-sub">When the next votes are, who's running, how the polls look (from voters' views, party loyalty and name recognition), and the money and ads behind each campaign. Click a candidate to open them.</div></div></div>
+    morphHTML(glance, `<div class="sv-card-h"><div><div class="sv-title">Elections at a glance</div><div class="sv-sub">When the next votes are, who's running, how the polls look (from voters' views, party loyalty and name recognition), and the money and ads behind each campaign. Click a candidate to open them.</div></div></div>
       ${govs[0] ? block(govs[0], true) : '<p class="muted small">No government yet.</p>'}
       ${campaigning.map((g) => block(g, true)).join('')}
-      ${quiet.length ? `<div class="el-others"><div class="pl-group">Other governments</div>${quiet.map((g) => block(g, false)).join('')}</div>` : ''}`;
+      ${quiet.length ? `<div class="el-others"><div class="pl-group">Other governments</div>${quiet.map((g) => block(g, false)).join('')}</div>` : ''}`);
   };
   glance.addEventListener('click', (ev) => { const el = (ev.target as HTMLElement).closest('[data-person]') as HTMLElement | null; if (el) h.onSelect('person', Number(el.dataset.person)); });
 
@@ -154,10 +155,10 @@ export function politicsParts(sim: () => Simulation, h: Helpers): Part[] {
       const face = a.kind === 'attack' ? `background:#2a2a28;border:2px solid ${hsl(hue, 60, 50)}` : `background:${hsl(hue, 55, 38)}`;
       return `<div class="ad-card${a.kind === 'attack' ? ' attack' : ''}" data-person="${a.sponsor}"><div class="ad-face" style="${face}">${esc(a.headline)}</div><div class="ad-tag">${esc(a.tagline)}</div><div class="ad-meta"><span class="ad-kind">${KIND_LABEL[a.kind]}</span> · ${a.cost ? compact(a.cost) : 'free'} · ${esc(formatTime(a.t).split(',')[0])} · by ${esc(cand?.name ?? nameOf(ctx, a.sponsor))}${a.target !== undefined ? ` · about ${esc(nameOf(ctx, a.target))}` : ''}</div></div>`;
     });
-    adsCard.innerHTML = `<div class="sv-card-h"><div><div class="sv-title">Campaign ads</div><div class="sv-sub">The latest ads in the campaigns now running (and the last week): posters supporters put up, billboards and rented spaces, TV spots, targeted online ads, and attack ads. Click one to open the candidate.</div></div>
+    morphHTML(adsCard, `<div class="sv-card-h"><div><div class="sv-title">Campaign ads</div><div class="sv-sub">The latest ads in the campaigns now running (and the last week): posters supporters put up, billboards and rented spaces, TV spots, targeted online ads, and attack ads. Click one to open the candidate.</div></div>
       <div class="group sv-seg"><button data-adf="all" class="${adsFilter === 'all' ? 'on' : ''}">All</button><button data-adf="attack" class="${adsFilter === 'attack' ? 'on' : ''}">Attack ads</button></div></div>
       <div class="ad-counts muted small">${[...byKind.entries()].map(([k, n]) => `${KIND_LABEL[k as AdLogEntry['kind']]}: ${n}`).join(' · ') || 'No campaign running right now.'}</div>
-      <div class="ad-grid">${cards.join('') || '<p class="muted small">No campaign ads yet.</p>'}</div>`;
+      <div class="ad-grid">${cards.join('') || '<p class="muted small">No campaign ads yet.</p>'}</div>`);
     const cands = openElections(sim()).flatMap((e) => e.candidates.filter((c) => !c.withdrawn));
     spendBars.set(cands.map((c) => ({ label: nameOf(ctx, c.person), value: c.spent, onClick: () => h.onSelect('person', c.person) })).sort((a, b) => b.value - a.value), 12);
   };
@@ -255,7 +256,7 @@ export function politicsParts(sim: () => Simulation, h: Helpers): Part[] {
       const none = e.candidates.length ? 'no winner' : 'nobody stood';
       return `<tr><td>${esc(formatTime(e.day).split(',')[0])}</td><td>${esc(g?.short ?? '?')}</td><td>${e.kind}</td><td>${motion || `<span class="muted">${none}</span>`}</td><td class="r">${percent(e.turnout)}</td></tr>`;
     });
-    results.innerHTML = `<div class="sv-card-h"><div><div class="sv-title">Past elections</div><div class="sv-sub">Who won (and with what share of the vote in their race), and how many voters turned out.</div></div></div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Day</th><th>Government</th><th>Kind</th><th>Winners</th><th class="r">Turnout</th></tr>${rows.join('') || '<tr><td colspan="5" class="muted">No elections held yet.</td></tr>'}</table></div>`;
+    morphHTML(results, `<div class="sv-card-h"><div><div class="sv-title">Past elections</div><div class="sv-sub">Who won (and with what share of the vote in their race), and how many voters turned out.</div></div></div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Day</th><th>Government</th><th>Kind</th><th>Winners</th><th class="r">Turnout</th></tr>${rows.join('') || '<tr><td colspan="5" class="muted">No elections held yet.</td></tr>'}</table></div>`);
   };
 
   return [
@@ -295,7 +296,7 @@ export function adsParts(sim: () => Simulation, h: Helpers): Part[] {
       const wSpend = week.reduce((a, d) => a + (d.adSpend[ch] ?? 0), 0), wSeen = week.reduce((a, d) => a + (d.flows['adimp:' + ch] ?? 0), 0), wConv = week.reduce((a, d) => a + (d.flows['adconv:' + ch] ?? 0), 0);
       return `<tr><td><i class="key-rect" style="background:${slot(CHANNELS.indexOf(ch))}"></i>${CHANNEL_LABEL[ch]}</td><td class="r">${compact(spend)}</td><td class="r">${whole(seen)}</td><td class="r">${whole(conv)}</td><td class="r">${wSeen ? compact((wSpend / wSeen) * 1000) : '—'}</td><td class="r">${wConv ? compact(wSpend / wConv) : '—'}</td><td class="r">${whole(wConv)}</td></tr>`;
     });
-    eff.body.innerHTML = `<div class="sv-scroll"><table class="sv-mtable"><tr><th>Channel</th><th class="r">Spent yesterday</th><th class="r">Times seen</th><th class="r">New customers</th><th class="r">Cost per 1,000 seen (7 days)</th><th class="r">Cost per new customer (7 days)</th><th class="r">New customers (7 days)</th></tr>${rows.join('')}</table></div>`;
+    morphHTML(eff.body, `<div class="sv-scroll"><table class="sv-mtable"><tr><th>Channel</th><th class="r">Spent yesterday</th><th class="r">Times seen</th><th class="r">New customers</th><th class="r">Cost per 1,000 seen (7 days)</th><th class="r">Cost per new customer (7 days)</th><th class="r">New customers (7 days)</th></tr>${rows.join('')}</table></div>`);
     void days;
   };
   // advertisers
@@ -316,7 +317,7 @@ export function adsParts(sim: () => Simulation, h: Helpers): Part[] {
       const bar = CHANNELS.map((ch, i) => `<i style="width:${((mix[ch] ?? 0) * 100).toFixed(1)}%;background:${slot(i)}" title="${CHANNEL_LABEL[ch]} ${percent(mix[ch] ?? 0)}"></i>`).join('');
       return `<tr class="sv-click" data-firm="${f.id}"><td>${esc(f.name)}</td><td>${esc(BUILDINGS[f.kind].label)}</td><td class="r">${compact(f.adBudget ?? 0)}</td><td class="mixcell"><span class="mixbar">${f.adMix ? bar : ''}</span>${f.adMix ? '' : '<span class="muted small">fixed split</span>'}</td><td class="r">${whole(seen)}</td><td class="r">${conv.toFixed(1)}</td><td class="r">${conv > 0.05 ? compact(spend / conv) : '—'}</td></tr>`;
     });
-    table.body.innerHTML = `<div class="legend">${CHANNELS.map((ch, i) => `<span><i class="key-rect" style="background:${slot(i)}"></i>${CHANNEL_LABEL[ch]}</span>`).join('')}</div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Company</th><th>Business</th><th class="r">Budget/day</th><th>Budget split</th><th class="r">Ads seen/day</th><th class="r">New customers/day</th><th class="r">Cost per new customer</th></tr>${rows.join('')}</table></div>`;
+    morphHTML(table.body, `<div class="legend">${CHANNELS.map((ch, i) => `<span><i class="key-rect" style="background:${slot(i)}"></i>${CHANNEL_LABEL[ch]}</span>`).join('')}</div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Company</th><th>Business</th><th class="r">Budget/day</th><th>Budget split</th><th class="r">Ads seen/day</th><th class="r">New customers/day</th><th class="r">Cost per new customer</th></tr>${rows.join('')}</table></div>`);
     void ctx;
   };
   table.body.addEventListener('click', (ev) => { const el = (ev.target as HTMLElement).closest('[data-firm]') as HTMLElement | null; if (el) h.onSelect('firm', Number(el.dataset.firm)); });
@@ -326,7 +327,7 @@ export function adsParts(sim: () => Simulation, h: Helpers): Part[] {
   const fillSpaces = () => {
     const ads = sim().state.ads.filter((a) => a.owner !== undefined);
     const kinds = [...new Set(ads.map((a) => a.kind))];
-    spaces.body.innerHTML = `<table class="sv-mtable"><tr><th>Kind</th><th class="r">Spaces</th><th class="r">Rented</th><th class="r">Empty</th></tr>${kinds.map((k) => { const of = ads.filter((a) => a.kind === k); const rented = of.filter((a) => a.sponsor >= 0).length; return `<tr><td>${k}</td><td class="r">${of.length}</td><td class="r">${rented}</td><td class="r">${of.length - rented}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">No ad companies yet.</td></tr>'}</table>`;
+    morphHTML(spaces.body, `<table class="sv-mtable"><tr><th>Kind</th><th class="r">Spaces</th><th class="r">Rented</th><th class="r">Empty</th></tr>${kinds.map((k) => { const of = ads.filter((a) => a.kind === k); const rented = of.filter((a) => a.sponsor >= 0).length; return `<tr><td>${k}</td><td class="r">${of.length}</td><td class="r">${rented}</td><td class="r">${of.length - rented}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">No ad companies yet.</td></tr>'}</table>`);
   };
   return [
     { el: eff.el, update: (d) => fillEff(d) },

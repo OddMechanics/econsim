@@ -38,6 +38,8 @@ export interface World {
   forage: number[];
   fish: number[];
   forageCap: number[];
+  /** Bumped when terrain heights change (lots graded for building), so the ground mesh can follow. */
+  hver?: number;
   fishCap: number[];
   oreCap: number[];
   clayCap: number[];

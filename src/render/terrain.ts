@@ -234,6 +234,8 @@ export class TerrainRenderer {
   private fUsed = new Float32Array(0);
   private fFert = new Float32Array(0);
   private seed = 0;
+  /** The world's height version the ground mesh was built for (the renderer calls in at most every 2 seconds). */
+  private hver = 0;
 
   constructor(private readonly scene: Scene, private readonly shadows: ShadowGenerator | null, world: World) {
     this.groundMat = new StandardMaterial('terrainMat', scene);
@@ -282,8 +284,40 @@ export class TerrainRenderer {
   /** Re-instance nature from the world's resource stocks (and recolor tiles whose kind/use changed). */
   updateNature(world: World): void {
     if (world !== this.world) { this.setWorld(world); return; }
+    this.refreshHeights();
     this.refreshColors();
     this.placeNature();
+  }
+
+  /** Building sites leveled the ground: move the ground vertices to match. */
+  private refreshHeights(): void {
+    const w = this.world;
+    if (!this.ground || (w.hver ?? 0) === this.hver) return;
+    this.hver = w.hver ?? 0;
+    const M = this.M, step = w.tile / RES;
+    const pos = this.ground.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+    const nrm = this.ground.getVerticesData(VertexBuffer.NormalKind) as Float32Array;
+    if (!pos || !nrm) return;
+    const hv = this.hv, ny = this.ny;
+    let moved = false;
+    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+      const v = j * M + i, h = heightAt(w, i * step, j * step);
+      if (Math.abs(h - hv[v]) > 1e-4) { hv[v] = h; pos[v * 3 + 1] = h; moved = true; }
+    }
+    if (!moved) return;
+    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+      const v = j * M + i;
+      const hl = hv[j * M + Math.max(0, i - 1)], hr = hv[j * M + Math.min(M - 1, i + 1)];
+      const hd = hv[Math.max(0, j - 1) * M + i], hu = hv[Math.min(M - 1, j + 1) * M + i];
+      const gx = (hr - hl) / (step * ((i > 0 && i < M - 1) ? 2 : 1));
+      const gz = (hu - hd) / (step * ((j > 0 && j < M - 1) ? 2 : 1));
+      const len = Math.hypot(gx, 1, gz);
+      nrm[v * 3] = -gx / len; nrm[v * 3 + 1] = 1 / len; nrm[v * 3 + 2] = -gz / len;
+      ny[v] = 1 / len;
+    }
+    this.ground.updateVerticesData(VertexBuffer.PositionKind, pos);
+    this.ground.updateVerticesData(VertexBuffer.NormalKind, nrm);
+    this.ground.refreshBoundingInfo();
   }
 
   dispose(): void {
@@ -397,6 +431,7 @@ export class TerrainRenderer {
     g.metadata = { kind: 'terrain' };
     g.freezeWorldMatrix();
     this.ground = g;
+    this.hver = w.hver ?? 0;
   }
 
   /** Copy the tile data the colors depend on; returns the tiles whose look changed. */

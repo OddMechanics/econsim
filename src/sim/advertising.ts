@@ -236,7 +236,7 @@ function adcosDaily(ctx: Ctx): void {
     const mine = ctx.s.ads.filter((a) => a.owner === f.id);
     const rented = mine.filter((a) => a.sponsor >= 0).length;
     const occ = mine.length ? rented / mine.length : 0;
-    f.prices.rate = Math.max(1, Math.min(9, (f.prices.rate ?? 3) * (occ > 0.85 ? 1.05 : occ < 0.5 ? 0.96 : 1)));
+    f.prices.rate = Math.max(1, Math.min(9, (f.prices.rate ?? 3) * (occ > 0.85 ? 1.05 : occ < 0.5 ? 0.96 : occ < 0.7 ? 0.98 : 1)));
     // rent for the spots: building owners, lot owners, the city
     const paid = new Set<string>();
     for (const a of mine) {
@@ -650,6 +650,10 @@ export function campaignAds(ctx: Ctx, e: Election): void {
 export function adExposureHourly(ctx: Ctx): void {
   if (!ctx.s.ads.length) return;
   const slot = Math.floor(ctx.s.tick / 2) % 12;
+  // a screen rotates through the ads booked on it (empty slots are skipped, as on the screen itself)
+  const booked = new Map<string, number[]>();
+  for (const a of ctx.s.ads) if (a.kind === 'screen' && a.sponsor >= 0) { const k = `${a.building}|${a.x.toFixed(1)}|${a.y.toFixed(1)}`; const l = booked.get(k); if (l) l.push(a.slot ?? 0); else booked.set(k, [a.slot ?? 0]); }
+  for (const l of booked.values()) l.sort((p, q) => p - q);
   for (const p of ctx.s.people) {
     if (p.inside >= 0 && p.driving < 0) continue;
     if (p.sleeping || !ctx.rng.chance(0.5)) continue;
@@ -659,8 +663,11 @@ export function adExposureHourly(ctx: Ctx): void {
       if (d > reach) continue;
       // only from the front (columns are round; sidewalk panels have two faces)
       if (a.kind !== 'column' && !(a.kind === 'poster' && a.building === -1) && Math.cos(a.angle) * (p.x - a.x) + Math.sin(a.angle) * (p.y - a.y) < 0) continue;
-      // a screen shows one of its ads at a time
-      if (a.kind === 'screen' && (a.slots ?? 1) > 1 && (slot % (a.slots ?? 1)) !== (a.slot ?? 0)) continue;
+      // a screen shows one of its booked ads at a time
+      if (a.kind === 'screen' && (a.slots ?? 1) > 1) {
+        const on = booked.get(`${a.building}|${a.x.toFixed(1)}|${a.y.toFixed(1)}`);
+        if (!on || on[slot % on.length] !== (a.slot ?? 0)) continue;
+      }
       const read = a.kind === 'flyer' ? 0.2 : a.kind === 'billboard' || a.kind === 'screen' ? 0.6 : 0.4;
       if (!ctx.rng.chance(read)) continue;
       const w = a.kind === 'screen' ? 0.05 : a.kind === 'billboard' ? 0.04 : a.kind === 'flyer' ? 0.03 : 0.025;

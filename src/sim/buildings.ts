@@ -1,6 +1,7 @@
 import { cashOf, log, nameOf, newId, pay, type Ctx } from './ctx';
 import { BUILDINGS, emptyInv, invTotal, materialsFor, TOWERS, unitsFor, workHoursFor } from './goods';
 import { toWorld } from './layout';
+import { heightAt } from './world';
 import { lotsForSale, markLotUsed } from './roads';
 import { noteLandDemand, noteLandSale } from './government';
 import type { Building, BuildingKind, Lot, Person, Unit, Zone } from './types';
@@ -14,9 +15,41 @@ export function placeOnLot(kind: BuildingKind, lot: Lot): { x: number; y: number
   return { x: lot.x + Math.cos(lot.angle) * off, y: lot.y + Math.sin(lot.angle) * off, w, d };
 }
 
+/**
+ * Builders level the site: the terrain tiles whose centers lie inside the lot
+ * take the height of the lot's center (water stays water). The building, its
+ * yard and the ground then line up, instead of the slope poking through.
+ */
+export function gradeLot(ctx: Ctx, lot: Lot): void {
+  const w = ctx.s.world;
+  const S = w.size * w.tile;
+  if (lot.x < 0 || lot.y < 0 || lot.x > S || lot.y > S) return; // beyond the grid: the countryside is computed, not stored
+  const base = heightAt(w, lot.x, lot.y);
+  const ca = Math.cos(lot.angle), sa = Math.sin(lot.angle);
+  const r = Math.hypot(lot.w, lot.d) / 2;
+  const t0x = Math.max(0, Math.floor((lot.x - r) / w.tile)), t1x = Math.min(w.size - 1, Math.floor((lot.x + r) / w.tile));
+  const t0y = Math.max(0, Math.floor((lot.y - r) / w.tile)), t1y = Math.min(w.size - 1, Math.floor((lot.y + r) / w.tile));
+  let changed = false;
+  for (let ty = t0y; ty <= t1y; ty++) {
+    for (let tx = t0x; tx <= t1x; tx++) {
+      const i = ty * w.size + tx;
+      if (w.kind[i] === 'water') continue;
+      const dx = (tx + 0.5) * w.tile - lot.x, dy = (ty + 0.5) * w.tile - lot.y;
+      const u = dx * ca + dy * sa, v = -dx * sa + dy * ca;
+      // inside the lot (a metre in from its edges, so the street stays as it is)
+      if (Math.abs(u) > lot.d / 2 - 1 || Math.abs(v) > lot.w / 2 - 1) continue;
+      if (Math.abs(w.height[i] - base) < 0.01) continue;
+      w.height[i] = base;
+      changed = true;
+    }
+  }
+  if (changed) { w.ver++; w.hver = (w.hver ?? 0) + 1; }
+}
+
 export function createBuilding(
   ctx: Ctx, kind: BuildingKind, lot: Lot, owner: number, floors = 1, built = false, firm = -1,
 ): Building {
+  gradeLot(ctx, lot);
   const pos = placeOnLot(kind, lot);
   const units: Unit[] = [];
   for (let i = 0; i < unitsFor(kind, floors); i++) units.push({ tenant: -1, rent: 0, since: 0, arrears: 0 });
