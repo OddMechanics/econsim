@@ -701,12 +701,23 @@ export class AdRenderer {
     return tex;
   }
 
-  /** The slot on air at time t (skipping empty slots), -1 if none. */
+  /** The slot on air at time t, -1 if none. A screen takes turns between the
+   *  ads booked on it (one booked ad stays on, three share the time evenly);
+   *  "Advertise here" shows only while nothing is booked. */
   private slotAt(sc: Screen, t: number): number {
-    let s = Math.floor((t + sc.phase) / SLOT_SEC) % sc.n;
-    for (let k = 0; k < sc.n; k++) {
-      if (sc.slots[s]) return s;
-      s = (s + 1) % sc.n;
+    const turn = Math.floor((t + sc.phase) / SLOT_SEC);
+    let booked = 0, vacant = -1;
+    for (let s = 0; s < sc.n; s++) {
+      const e = sc.slots[s];
+      if (!e) continue;
+      if (e.ad.sponsor >= 0) booked++;
+      else if (vacant < 0) vacant = s;
+    }
+    if (!booked) return vacant;
+    let k = turn % booked;
+    for (let s = 0; s < sc.n; s++) {
+      const e = sc.slots[s];
+      if (e && e.ad.sponsor >= 0 && k-- === 0) return s;
     }
     return -1;
   }
