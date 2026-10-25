@@ -8,6 +8,8 @@ import { assessLot, mainPolity, treasury } from './government';
 import { dayOf } from './ctx';
 import { RENTALS } from './housing';
 import { isOnline } from './online';
+import { compass } from './ideology';
+import { poll } from './elections';
 import { lotsForSale } from './roads';
 import { GOODS, type Building, type BuildingKind, type DailyStat, type Firm, type Good, type Lot, type MarketDay, type Person, type Sector, type StatPoint, type Zone } from './types';
 
@@ -269,6 +271,29 @@ export function recordDaily(ctx: Ctx): void {
     siteUsers += f.site?.users ?? 0;
     tvViewers += f.channel?.viewers ?? 0;
   }
+  // politics
+  let econ = 0, auth = 0, engagement = 0, grievance = 0, protesting = 0;
+  for (const p of s.people) { const c = compass(p); econ += c.econ; auth += c.auth; engagement += p.pol.engagement; grievance += p.pol.grievance; if (p.pol.protesting >= 0) protesting++; }
+  const parties: Record<string, number> = {};
+  for (const pt of s.parties) if (pt.members.length) parties[pt.name] = (parties[pt.name] ?? 0) + pt.members.length;
+  // profits by sector, and who holds the wealth
+  const profit: Partial<Record<Sector, number>> = {};
+  for (const f of s.firms) if (!f.closed) { const sec = sectorOfFirm.get(f.id) ?? 'office'; profit[sec] = (profit[sec] ?? 0) + (f.ledger.days[f.ledger.days.length - 1] ?? 0); }
+  const share = (from: number, to: number) => (totalWealth > 0 ? wealth.slice(Math.floor(from * wealth.length), Math.floor(to * wealth.length)).reduce((a, w) => a + Math.max(0, w), 0) / totalWealth : 0);
+  // the main government's coming election: where the race for its top office stands
+  let polls: DailyStat['polls'];
+  // (the main government's race; if it isn't voting soon, the soonest race elsewhere)
+  const races = s.elections.filter((e) => (e.status === 'campaign' || e.status === 'voting') && e.kind !== 'referendum').sort((a, b) => (a.polity === g?.id ? -1 : b.polity === g?.id ? 1 : a.day - b.day));
+  const race = races[0];
+  const rg = race ? ctx.gById.get(race.polity) : undefined;
+  if (race && rg) {
+    const top = race.offices.map((id) => rg.offices.find((o) => o.id === id)).find((o) => o?.kind === 'exec') ?? rg.offices.find((o) => o.id === race.offices[0]);
+    if (top) {
+      const shares: Record<string, number> = {};
+      for (const r of poll(ctx, race, top.id, 150)) shares[ctx.byId.get(r.person)?.name ?? `#${r.person}`] = r.share;
+      polls = { election: race.id, office: `${top.title}, ${rg.short}`, shares };
+    }
+  }
   const rec: DailyStat = {
     day: today - 1, t: s.tick, // the day that just ended
     pop: s.people.length,
@@ -286,6 +311,10 @@ export function recordDaily(ctx: Ctx): void {
     legit: g?.legitimacy ?? 0,
     income: { ...income }, spend: { ...spend },
     adSpend, siteUsers, tvViewers,
+    compass: { econ: econ / n, auth: auth / n }, engagement: engagement / n, grievance: grievance / n, protesting, parties,
+    profit,
+    wealthShares: { bottom50: share(0, 0.5), middle40: share(0.5, 0.9), top10: share(0.9, 1), top1: share(0.99, 1) },
+    ...(polls ? { polls } : {}),
   };
   // (two decimals is plenty, and keeps a long game's save small)
   (s.daily ??= []).push(JSON.parse(JSON.stringify(rec, (_k, v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v))) as DailyStat);

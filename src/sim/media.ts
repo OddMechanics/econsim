@@ -24,7 +24,7 @@ import { onFinished } from './hooks';
 import { mainPolity, polityAt, referenceWage } from './government';
 import { relation } from './social';
 import { staffPresent } from './tasks';
-import { onlineAdsFor, pushPost, seeAd, slotsFor } from './advertising';
+import { attackOf, onlineAdsFor, pushPost, seeAd, slotsFor } from './advertising';
 import { isOnline, maybeBack } from './online';
 import type { Broadcast, ChatLine, Firm, Person, Post, Site, SiteKind } from './types';
 
@@ -235,7 +235,7 @@ export function watchMinute(ctx: Ctx, p: Person, dt = 1): string | null {
   for (let i = 0; i < quarters; i++) {
     b.viewers++;
     if (b.kind === 'news' || b.kind === 'talk' || b.kind === 'propaganda') expose(p, b.slant, channel.slantAuth, 0.6);
-    for (const sponsor of b.ads) if (ctx.rng.chance(0.3)) seeAd(ctx, p, sponsor, 0.03);
+    for (const sponsor of b.ads) if (ctx.rng.chance(0.3)) seeAd(ctx, p, sponsor, 0.03, 'tv', attackOf(ctx, ch.id, sponsor));
     if (b.kind === 'debate') {
       const ev = ctx.s.events.find((e) => e.id === b.event);
       for (const id of ev?.speakers ?? []) p.pol.aware[id] = Math.min(1, (p.pol.aware[id] ?? 0) + 0.05);
@@ -356,7 +356,7 @@ export function browseMinute(ctx: Ctx, p: Person, elapsed: number, from = elapse
     }
     // the ads the site shows them (feed ads, sponsored results, banners, pre-rolls)
     onlineAdsFor(ctx, p, f.id, site.kind === 'social' || site.kind === 'video' ? 6 : site.kind === 'pay' || site.kind === 'crowd' ? 1 : 3);
-    for (const sponsor of slotsFor(ctx, f.id)) if (ctx.rng.chance(0.25)) seeAd(ctx, p, sponsor, 0.02);
+    for (const sponsor of slotsFor(ctx, f.id)) if (ctx.rng.chance(0.25)) seeAd(ctx, p, sponsor, 0.02, 'net');
     if (site.kind === 'classifieds' || site.kind === 'jobs') p.knownJobs = ctx.s.tick;
     if (site.kind === 'classifieds' || site.kind === 'homes') p.knownHomes = ctx.s.tick;
     if (site.kind === 'crowd') maybeBack(ctx, p);
@@ -413,8 +413,8 @@ function readPost(ctx: Ctx, p: Person, post: Post, site: Site): void {
       if (ctx.rng.chance(0.4 + Math.min(0.4, (author.followers ?? 0) / 100))) author.followers = (author.followers ?? 0) + 1 + (post.shares ?? 0) * 0.2;
     }
   }
-  if (post.sponsor !== undefined) seeAd(ctx, p, post.sponsor, ctx.byId.has(post.who) ? 0.04 * (0.5 + (p.rel[post.who]?.trust ?? 0.3)) : 0.02);
-  else if (ctx.byId.get(post.who) === undefined && ctx.fById.has(post.who)) seeAd(ctx, p, post.who, 0.01);
+  if (post.sponsor !== undefined) seeAd(ctx, p, post.sponsor, ctx.byId.has(post.who) ? 0.04 * (0.5 + (p.rel[post.who]?.trust ?? 0.3)) : 0.02, ctx.byId.has(post.who) ? 'influencer' : 'net');
+  else if (ctx.byId.get(post.who) === undefined && ctx.fById.has(post.who)) seeAd(ctx, p, post.who, 0.01, 'net');
 }
 
 /**

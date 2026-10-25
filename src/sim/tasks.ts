@@ -671,6 +671,7 @@ function dayLaborMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'daylabor'
       const pay = Math.min(cashOf(ctx, crew.id), referenceWage(ctx) * ROLE.builder.pay * 0.7 * hours / 8);
       addCash(ctx, crew.id, -pay);
       addCash(ctx, p.id, pay);
+      tally(ctx, 'daylaborpay', pay);
       ctx.s.counters.dayLabor = (ctx.s.counters.dayLabor ?? 0) + 1;
       p.activity = `got ${pay.toFixed(1)} for day labor`;
     }

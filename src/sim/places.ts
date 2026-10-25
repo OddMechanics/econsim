@@ -18,7 +18,8 @@ import { MINUTES_PER_DAY } from './config';
 import { type Ctx } from './ctx';
 import { BUILDINGS } from './goods';
 import { RENTALS } from './housing';
-import type { Building, Firm, KnownPlace, Person, PlaceKind, PlaceSource } from './types';
+import { tally } from './stats';
+import type { AdChannel, Building, Firm, KnownPlace, Person, PlaceKind, PlaceSource } from './types';
 
 /** How many places of each kind a person keeps in mind. */
 export const PLACE_CAP: Record<PlaceKind, number> = { shop: 8, food: 6, car: 2, job: 12, home: 8, out: 4 };
@@ -68,7 +69,7 @@ function standing(ctx: Ctx, pl: KnownPlace): number {
 }
 
 /** They come to know a place (or it comes back to mind). */
-export function learnPlace(ctx: Ctx, p: Person, b: Building, k: PlaceKind, src: PlaceSource, extra: { via?: number; op?: number } = {}): KnownPlace {
+export function learnPlace(ctx: Ctx, p: Person, b: Building, k: PlaceKind, src: PlaceSource, extra: { via?: number; op?: number; ch?: AdChannel } = {}): KnownPlace {
   const list = (p.places ??= []);
   const have = list.find((x) => x.b === b.id && x.k === k);
   if (have) {
@@ -80,6 +81,7 @@ export function learnPlace(ctx: Ctx, p: Person, b: Building, k: PlaceKind, src: 
   const pl: KnownPlace = { b: b.id, k, src, t: ctx.s.tick };
   if (extra.via !== undefined) pl.via = extra.via;
   if (extra.op !== undefined) pl.op = extra.op;
+  if (extra.ch !== undefined) pl.ch = extra.ch;
   list.push(pl);
   // too many of this kind: the one they think of least goes (never the one just learned)
   let n = 0;
@@ -95,6 +97,12 @@ export function learnPlace(ctx: Ctx, p: Person, b: Building, k: PlaceKind, src: 
 /** After going somewhere: they've seen it for themselves (good: got what they came for). */
 export function visitedPlace(ctx: Ctx, p: Person, b: Building, k: PlaceKind, good: boolean): void {
   const pl = learnPlace(ctx, p, b, k, 'visit');
+  // the first visit to a place they found through an ad: a new customer for that ad (and its channel)
+  if (pl.seen === undefined && good && pl.src === 'ad' && pl.ch) {
+    const af = ctx.fById.get(pl.via ?? -1);
+    if (af) { const t = (af.adToday ??= { imp: {}, conv: {} }); t.conv[pl.ch] = (t.conv[pl.ch] ?? 0) + 1; }
+    tally(ctx, 'adconv:' + pl.ch, 1);
+  }
   pl.seen = ctx.s.tick;
   const f = ctx.fById.get(b.firm);
   const op = pl.op ?? 0;
@@ -247,14 +255,14 @@ function consumerPlaces(ctx: Ctx, f: Firm): { b: Building; k: PlaceKind }[] {
 }
 
 /** An ad: maybe they now know one of the company's places (the one nearest them). `w` is the ad's strength. */
-export function heardOfFirm(ctx: Ctx, p: Person, firm: number, w: number): void {
+export function heardOfFirm(ctx: Ctx, p: Person, firm: number, w: number, ch: AdChannel = 'street'): void {
   const f = ctx.fById.get(firm);
   if (!f || f.closed || !p.places || !ctx.rng.chance(Math.min(1, w * 10))) return;
   const sites = consumerPlaces(ctx, f);
   if (!sites.length) return;
   const home = ctx.bById.get(p.home) ?? p;
   const near = sites.reduce((a, c) => (Math.hypot(c.b.x - home.x, c.b.y - home.y) < Math.hypot(a.b.x - home.x, a.b.y - home.y) ? c : a));
-  learnPlace(ctx, p, near.b, near.k, 'ad', { via: firm });
+  learnPlace(ctx, p, near.b, near.k, 'ad', { via: firm, ch });
 }
 
 /**

@@ -33,7 +33,9 @@ import { streetLamps } from './street';
 import { borrow } from './finance';
 import { TOWERS } from './goods';
 import { heardOfFirm } from './places';
-import type { AdPlacement, Election, Firm, Person, Post } from './types';
+import { poll } from './elections';
+import { tally } from './stats';
+import type { AdChannel, AdLogEntry, AdPlacement, Election, Firm, Person, Post } from './types';
 
 // ------------------------------------------------------------------ spots
 
@@ -271,12 +273,29 @@ function consumerFacing(f: Firm): boolean {
 }
 
 /** Online ad pools: who advertises on which site today (runtime; rebuilt daily). */
-const pools = new Map<number, { sponsor: number; w: number; geo?: { x: number; y: number }; econ?: number }[]>();
+/** Who an online ad is aimed at, beyond place and views: likely buyers. */
+type Audience = 'car' | 'saver' | 'jobless' | 'hungry';
+interface Target { geo?: { x: number; y: number }; econ?: number; aud?: Audience; swing?: boolean; attack?: number }
+const pools = new Map<number, ({ sponsor: number; w: number } & Target)[]>();
+/** Does a person belong to an ad's audience? */
+function inAudience(p: Person, aud: Audience): boolean {
+  switch (aud) {
+    case 'car': return p.car < 0 && p.money > 250;
+    case 'saver': return p.money > 500;
+    case 'jobless': return p.job < 0 && !p.firms.length;
+    case 'hungry': return p.needs.food < 55;
+  }
+}
 /** TV ad slots bought for a day (runtime; recomputed daily). */
-const adSlots: { day: number; outlet: number; sponsor: number }[] = [];
+const adSlots: { day: number; outlet: number; sponsor: number; attack?: number }[] = [];
 export function slotsFor(ctx: Ctx, outlet: number): number[] {
   const d = dayOf(ctx.s.tick);
   return adSlots.filter((s) => s.outlet === outlet && s.day === d).map((s) => s.sponsor);
+}
+/** A TV spot bought as an attack ad: the opponent it's about (undefined for an ordinary spot). */
+export function attackOf(ctx: Ctx, outlet: number, sponsor: number): number | undefined {
+  const d = dayOf(ctx.s.tick);
+  return adSlots.find((s) => s.outlet === outlet && s.day === d && s.sponsor === sponsor)?.attack;
 }
 
 function sitesSellingAds(ctx: Ctx): Firm[] {
@@ -290,7 +309,7 @@ function bestChannel(ctx: Ctx): Firm | undefined {
 }
 
 /** Buy online ads: spread across sites by their audience (the money goes to them), targeted. */
-function buyOnline(ctx: Ctx, sponsor: number, budget: number, target: { geo?: { x: number; y: number }; econ?: number }): number {
+function buyOnline(ctx: Ctx, sponsor: number, budget: number, target: Target): number {
   if (budget <= 0.05) return 0;
   const sites = sitesSellingAds(ctx);
   const reach = sites.reduce((s, f) => s + f.site!.active, 0);
@@ -391,10 +410,17 @@ export function adsDaily(ctx: Ctx): void {
   for (const f of ctx.s.firms) if (f.site) { f.site.adRevenue = 0; }
   const channel = bestChannel(ctx);
   let streetWanted = 0;
+  // bad impressions from attack ads fade
+  for (const p of ctx.s.people) {
+    if (!p.pol.neg) continue;
+    for (const k of Object.keys(p.pol.neg)) { const v = p.pol.neg[+k] * 0.85; if (v < 0.02) delete p.pol.neg[+k]; else p.pol.neg[+k] = v; }
+  }
   for (const f of ctx.s.firms) {
     if (f.closed || ctx.govOfFirm.has(f.id)) continue;
     const def = BUILDINGS[f.kind];
     if (!def.service && !def.output) continue;
+    // yesterday's results, smoothed: what each channel cost, reached and brought in
+    learnFromAds(f);
     const head = controllerOf(ctx, f);
     const young = ctx.s.tick - f.founded < 10 * MINUTES_PER_DAY;
     const sales = f.revenueAvg ?? 0;
@@ -410,14 +436,14 @@ export function adsDaily(ctx: Ctx): void {
     if (site?.built && site.host === undefined && ctx.rng.chance(0.3)) posterOn(ctx, site, f.id, f.name, headline, f.hue, 'product', 10);
     if (young && ctx.rng.chance(0.5)) bannerOn(ctx, f, 'GRAND OPENING', headline, 10);
     const consumer = consumerFacing(f);
-    const split = consumer ? { street: 0.4, net: 0.35, tv: channel ? 0.2 : 0, influencer: 0.05 } : { street: 0.3, net: 0.7, tv: 0, influencer: 0 };
-    if (!channel) split.street += 0.1, split.net += 0.1;
+    const split = adMix(f, consumer, !!channel);
     const geo = site ? { x: site.x, y: site.y } : undefined;
+    const aud: Audience | undefined = def.service === 'cars' ? 'car' : def.service === 'finance' ? 'saver' : def.service === 'meal' ? 'hungry' : f.site?.kind === 'jobs' || f.site?.kind === 'classifieds' ? 'jobless' : undefined;
     const spend = f.adSpend;
     streetWanted += budget * split.street;
     // street ads are rented by the week: only when not already renting
     if (!ctx.s.ads.some((a) => a.sponsor === f.id && a.owner !== undefined && a.expires > ctx.s.tick + MINUTES_PER_DAY)) spend.street = buyStreet(ctx, f, budget * split.street, headline, f.slogan);
-    spend.net = buyOnline(ctx, f.id, budget * split.net, consumer ? { geo } : {});
+    spend.net = buyOnline(ctx, f.id, budget * split.net, consumer ? { geo, aud } : {});
     if (channel && split.tv > 0 && budget * split.tv * 2 > channel.channel!.adPrice && ctx.rng.chance(0.5)) {
       if (pay(ctx, f.id, channel.id, channel.channel!.adPrice, false) > 0) { adSlots.push({ day: dayOf(ctx.s.tick), outlet: channel.id, sponsor: f.id }); spend.tv = channel.channel!.adPrice; }
     }
@@ -428,6 +454,52 @@ export function adsDaily(ctx: Ctx): void {
   while (adSlots.length && adSlots[0].day < dayOf(ctx.s.tick) - 1) adSlots.shift();
   // what businesses would spend on street ads if there were spaces to rent (ad companies watch this)
   ctx.s.data = { ...(ctx.s.data ?? {}), streetWanted };
+}
+
+const CHANNELS: AdChannel[] = ['street', 'net', 'tv', 'influencer'];
+
+/** Fold yesterday's ad results into the smoothed record (and start a new day's count). */
+function learnFromAds(f: Firm): void {
+  const perf = (f.adPerf ??= { spend: {}, conv: {}, imp: {} });
+  const today = f.adToday ?? { imp: {}, conv: {} };
+  for (const ch of CHANNELS) {
+    perf.spend[ch] = 0.85 * (perf.spend[ch] ?? 0) + 0.15 * (f.adSpend?.[ch] ?? 0);
+    perf.conv[ch] = 0.85 * (perf.conv[ch] ?? 0) + 0.15 * (today.conv[ch] ?? 0);
+    perf.imp[ch] = 0.85 * (perf.imp[ch] ?? 0) + 0.15 * (today.imp[ch] ?? 0);
+  }
+  f.adToday = { imp: {}, conv: {} };
+}
+
+/**
+ * How a company splits its ad budget. It starts from what businesses like it
+ * usually do; consumer brands then move money toward the channels that bring
+ * them more new customers per coin (measured: people who first came after
+ * seeing an ad there), a little each day, keeping a toe in every channel.
+ */
+function adMix(f: Firm, consumer: boolean, tv: boolean): Record<AdChannel, number> {
+  const base: Record<AdChannel, number> = consumer ? { street: 0.4, net: 0.35, tv: tv ? 0.2 : 0, influencer: 0.05 } : { street: 0.3, net: 0.7, tv: 0, influencer: 0 };
+  if (!tv) { base.street += consumer ? 0.1 : 0; base.net += consumer ? 0.1 : 0; }
+  if (!consumer) return base;
+  const mix: Record<AdChannel, number> = { street: f.adMix?.street ?? base.street, net: f.adMix?.net ?? base.net, tv: tv ? f.adMix?.tv ?? base.tv : 0, influencer: f.adMix?.influencer ?? base.influencer };
+  const perf = f.adPerf;
+  const results = perf ? CHANNELS.reduce((a, ch) => a + (perf.conv[ch] ?? 0), 0) : 0;
+  if (perf && results > 0.5) {
+    // new customers per coin spent, with a little benefit of the doubt for channels not tried much
+    const value: Record<AdChannel, number> = { street: 0, net: 0, tv: 0, influencer: 0 };
+    let total = 0;
+    for (const ch of CHANNELS) {
+      if (ch === 'tv' && !tv) continue;
+      value[ch] = ((perf.conv[ch] ?? 0) + 0.05) / ((perf.spend[ch] ?? 0) + 1);
+      total += value[ch];
+    }
+    for (const ch of CHANNELS) if (total > 0 && (ch !== 'tv' || tv)) mix[ch] = 0.9 * mix[ch] + 0.1 * (value[ch] / total);
+  }
+  // every available channel keeps at least 5%; shares add up to 1
+  let sum = 0;
+  for (const ch of CHANNELS) { if (ch === 'tv' && !tv) { mix[ch] = 0; continue; } mix[ch] = Math.max(0.05, mix[ch]); sum += mix[ch]; }
+  for (const ch of CHANNELS) mix[ch] /= sum;
+  f.adMix = { ...mix };
+  return mix;
 }
 
 function adHeadline(ctx: Ctx, f: Firm): string {
@@ -484,17 +556,22 @@ export function onlineAdsFor(ctx: Ctx, p: Person, site: number, n: number): numb
     let w = a.w;
     if (a.geo) w *= Math.max(0.2, 1.4 - Math.hypot(a.geo.x - hx, a.geo.y - hy) / 900);
     if (a.econ !== undefined) w *= Math.max(0.1, 1.5 - Math.abs(a.econ - c.econ));
+    // likely buyers (no car, savings, out of work, hungry) see more of the ads aimed at them
+    if (a.aud && inAudience(p, a.aud)) w *= 2.5;
+    // campaigns aim at the undecided: weak party loyalty, some interest in politics
+    if (a.swing) w *= (1.4 - p.pol.partyStrength) * (0.4 + p.pol.engagement);
     const f = ctx.fById.get(a.sponsor);
     if (f && hungry && (BUILDINGS[f.kind].service === 'meal' || BUILDINGS[f.kind].service === 'retail')) w *= 2;
     total += w;
     return w;
   });
+  const picked: typeof pool = [];
   for (let k = 0; k < n; k++) {
     let r = ctx.rng.next() * total;
-    for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) { out.push(pool[i].sponsor); break; } }
+    for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) { picked.push(pool[i]); out.push(pool[i].sponsor); break; } }
   }
   // most online ads barely register (scrolling past): a little awareness each, more for repeats
-  for (const s of out) seeAd(ctx, p, s, 0.008);
+  for (const a of picked) seeAd(ctx, p, a.sponsor, 0.008, 'net', a.attack);
   // impressions (for the site's stats)
   const f = ctx.fById.get(site);
   if (f?.site) f.site.impressions = (f.site.impressions ?? 0) + out.length;
@@ -506,6 +583,9 @@ export function onlineAdsFor(ctx: Ctx, p: Person, site: number, n: number): numb
 /** A campaign spends: posters on supporters' walls, a billboard or a screen slot, TV and targeted Net ads. */
 export function campaignAds(ctx: Ctx, e: Election): void {
   const channel = bestChannel(ctx);
+  // the polls for each office being contested: who leads, who trails
+  const polls = new Map<number, { person: number; share: number }[]>();
+  for (const oid of new Set(e.candidates.filter((c) => !c.withdrawn).map((c) => c.office))) polls.set(oid, poll(ctx, e, oid, 60));
   for (const c of e.candidates) {
     const p = ctx.byId.get(c.person);
     if (!p || c.withdrawn) continue;
@@ -515,13 +595,18 @@ export function campaignAds(ctx: Ctx, e: Election): void {
     const headline = `VOTE ${name.toUpperCase()}`;
     const office = ctx.gById.get(e.polity)?.offices.find((o) => o.id === c.office);
     const tag = `${c.slogan}${office ? ` · for ${office.title.split(' (')[0]}` : ''}`;
+    const race = polls.get(c.office) ?? [];
+    const mine = race.find((r) => r.person === c.person)?.share ?? 0;
+    const leader = race.find((r) => r.person !== c.person);
     // supporters put posters on their own houses (free)
+    let posters = 0;
     for (const [id, r] of Object.entries(p.rel)) {
       if (r.trust < 0.55 || !ctx.rng.chance(0.15)) continue;
       const q = ctx.byId.get(+id);
       const h = q && ctx.bById.get(q.home);
-      if (h && h.owner === q.id && distance(compass(q), c) < 1.2) posterOn(ctx, h, p.id, headline, tag, hue, 'campaign', 14);
+      if (h && h.owner === q.id && distance(compass(q), c) < 1.2 && posterOn(ctx, h, p.id, headline, tag, hue, 'campaign', 14)) posters++;
     }
+    if (posters) logAd(ctx, e, p.id, 'poster', headline, `${tag} (${posters} on supporters' houses)`, 0);
     // a rented space (an ad company's), or a billboard spot from its owner
     if (c.funds > 30 && ctx.rng.chance(0.3)) {
       const space = ctx.s.ads.find((a) => a.sponsor < 0 && a.owner !== undefined && spaceRent(ctx, a) * 7 < c.funds * 0.5);
@@ -530,18 +615,31 @@ export function campaignAds(ctx: Ctx, e: Election): void {
         c.funds -= rent; c.spent += rent;
         addCash(ctx, space.owner!, rent);
         Object.assign(space, { sponsor: p.id, headline, tagline: tag, hue, topic: 'campaign', expires: ctx.s.tick + 7 * MINUTES_PER_DAY });
+        logAd(ctx, e, p.id, 'space', headline, `${tag} (a ${space.kind} for a week)`, rent);
       } else {
         const spot = billboardSpot(ctx);
-        if (spot) { addAd(ctx, { ...spot, sponsor: p.id, headline, tagline: tag, hue, topic: 'campaign', expires: ctx.s.tick + 10 * MINUTES_PER_DAY }); c.funds -= 25; c.spent += 25; }
+        if (spot) { addAd(ctx, { ...spot, sponsor: p.id, headline, tagline: tag, hue, topic: 'campaign', expires: ctx.s.tick + 10 * MINUTES_PER_DAY }); c.funds -= 25; c.spent += 25; logAd(ctx, e, p.id, 'billboard', headline, tag, 25); }
       }
     }
-    if (channel && c.funds > channel.channel!.adPrice * 2 && ctx.rng.chance(0.5)) { c.funds -= channel.channel!.adPrice; c.spent += channel.channel!.adPrice; addCash(ctx, channel.id, channel.channel!.adPrice); adSlots.push({ day: dayOf(ctx.s.tick), outlet: channel.id, sponsor: p.id }); }
-    // targeted online ads: to voters near the candidate's views
+    // trailing well behind: some of the money goes into attacking the leader (online and on TV)
+    const attacking = leader && mine < leader.share - 0.08 && c.funds > 20;
+    const rival = attacking ? ctx.byId.get(leader!.person) : undefined;
+    const attackLine = rival ? `${(rival.name.split(' ')[1] ?? rival.name).toUpperCase()}: WRONG FOR ${(ctx.gById.get(e.polity)?.short ?? 'THE CITY').toUpperCase()}` : '';
+    if (channel && c.funds > channel.channel!.adPrice * 2 && ctx.rng.chance(0.5)) {
+      c.funds -= channel.channel!.adPrice; c.spent += channel.channel!.adPrice; addCash(ctx, channel.id, channel.channel!.adPrice);
+      const attackSpot = rival && ctx.rng.chance(0.5) ? rival.id : undefined;
+      adSlots.push({ day: dayOf(ctx.s.tick), outlet: channel.id, sponsor: p.id, ...(attackSpot !== undefined ? { attack: attackSpot } : {}) });
+      logAd(ctx, e, p.id, attackSpot !== undefined ? 'attack' : 'tv', attackSpot !== undefined ? attackLine : headline, attackSpot !== undefined ? `a TV spot on ${channel.channel!.name}` : `${tag} · a TV spot on ${channel.channel!.name}`, channel.channel!.adPrice, attackSpot);
+    }
+    // targeted online ads: to the undecided near the candidate's views (and, when trailing, attacks on the leader)
     if (c.funds > 6) {
       const budget = Math.min(c.funds * 0.15, 12);
       c.funds -= budget; c.spent += budget;
       addCash(ctx, p.id, budget);
-      buyOnline(ctx, p.id, budget, { econ: c.econ });
+      const attack = rival ? budget * 0.4 : 0;
+      buyOnline(ctx, p.id, budget - attack, { econ: c.econ, swing: true });
+      logAd(ctx, e, p.id, 'online', headline, `${tag} · targeted at undecided voters near their views`, budget - attack);
+      if (rival) { buyOnline(ctx, p.id, attack, { econ: c.econ, attack: rival.id }); logAd(ctx, e, p.id, 'attack', attackLine, 'online ads', attack, rival.id); }
     }
   }
 }
@@ -572,17 +670,41 @@ export function adExposureHourly(ctx: Ctx): void {
 }
 
 /** Someone saw an ad (on the street, on TV, online). */
-export function seeAd(ctx: Ctx, p: Person, sponsor: number, w: number): void {
+export function seeAd(ctx: Ctx, p: Person, sponsor: number, w: number, ch: AdChannel = 'street', attack?: number): void {
   if (sponsor < 0) return;
-  p.pol.aware[sponsor] = Math.min(1, (p.pol.aware[sponsor] ?? 0) + w);
+  // counted for the advertiser (what its money reached) and the city's statistics
+  const f = ctx.fById.get(sponsor);
+  if (f) { const t = (f.adToday ??= { imp: {}, conv: {} }); t.imp[ch] = (t.imp[ch] ?? 0) + 1; }
+  tally(ctx, 'adimp:' + ch, 1);
+  if (attack !== undefined) {
+    // an attack ad: a worse impression of the opponent it's about (and a little of who paid for it)
+    const neg = (p.pol.neg ??= {});
+    neg[attack] = Math.min(1, (neg[attack] ?? 0) + w * 4);
+    p.pol.aware[sponsor] = Math.min(1, (p.pol.aware[sponsor] ?? 0) + w * 0.3);
+    return;
+  }
+  // each further sighting matters less once they know the name well
+  const known = p.pol.aware[sponsor] ?? 0;
+  p.pol.aware[sponsor] = Math.min(1, known + w * (1 - 0.7 * known));
   // a company's ad can put one of its shops or restaurants on their list of places they know
-  heardOfFirm(ctx, p, sponsor, w);
+  heardOfFirm(ctx, p, sponsor, w, ch);
   const cand = ctx.byId.get(sponsor);
   if (cand) {
-    // a political ad: small, short-lived persuasion toward what the candidate stands for
+    // a political ad: small, short-lived persuasion toward what the candidate stands for,
+    // and supporters who already agree get fired up to go and vote
     const c = ctx.s.elections.flatMap((e) => e.candidates).find((x) => x.person === sponsor);
-    if (c) expose(p, c.econ, c.auth, 0.5);
+    if (c) {
+      expose(p, c.econ, c.auth, 0.5);
+      if (distance(compass(p), c) < 0.6) p.pol.engagement = Math.min(1, p.pol.engagement + w * 0.5);
+    }
   }
+}
+
+/** Log a campaign ad (for the statistics window). */
+function logAd(ctx: Ctx, e: Election, sponsor: number, kind: AdLogEntry['kind'], headline: string, tagline: string, cost: number, target?: number): void {
+  const log = (ctx.s.adLog ??= []);
+  log.push({ t: ctx.s.tick, election: e.id, sponsor, kind, headline, tagline, cost: Math.round(cost * 100) / 100, ...(target !== undefined ? { target } : {}) });
+  if (log.length > 400) log.splice(0, log.length - 400);
 }
 
 /** For the UI: a short description of who owns an ad space. */

@@ -327,6 +327,7 @@ export function gigMinute(ctx: Ctx, p: Person, step: Extract<Step, { k: 'gig' }>
   sh.goods = emptyInv();
   ctx.s.shipments = ctx.s.shipments.filter((x) => x !== sh);
   p.gig.earned += earned;
+  tally(ctx, 'gigpay', earned);
   p.gig.jobs++;
   ctx.s.counters.gigs = (ctx.s.counters.gigs ?? 0) + 1;
   ctx.s.data = { ...(ctx.s.data ?? {}), ['gigs:' + app.id]: (ctx.s.data?.['gigs:' + app.id] ?? 0) + 1 };
@@ -398,6 +399,7 @@ export function hailRide(ctx: Ctx, p: Person, tx: number, ty: number): Vehicle |
   paymentFee(ctx, p, app.id, fare);
   driver.gig ??= { app: app.id, earned: 0, jobs: 0 };
   driver.gig.earned += fare * 0.75;
+  tally(ctx, 'gigpay', fare * 0.75);
   driver.gig.jobs++;
   app.site!.volume = (app.site!.volume ?? 0) + fare;
   ctx.s.counters.rides = (ctx.s.counters.rides ?? 0) + 1;

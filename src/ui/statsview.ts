@@ -10,16 +10,17 @@
 
 import { OUTSIDE } from '../sim/config';
 import { nameOf } from '../sim/ctx';
-import { GOOD } from '../sim/goods';
+import { GOOD, ROLE } from '../sim/goods';
 import type { Simulation } from '../sim/sim';
 import { firmValue, SECTORS, sectorOf, wealthOf } from '../sim/stats';
 import { GOODS, type DailyStat, type Good, type Sector } from '../sim/types';
-import { BarList, Columns, compact, DepthChart, percent, type Series, sparkline, TimeChart, whole } from './statcharts';
+import { BarList, Columns, compact, DepthChart, DivergingBars, percent, RankedBars, type Series, sparkline, TimeChart, whole } from './statcharts';
+import { adsParts, politicsParts } from './statspolitics';
 
-type Section = 'overview' | 'economy' | 'markets' | 'people' | 'housing' | 'companies' | 'government' | 'net';
+type Section = 'overview' | 'economy' | 'markets' | 'people' | 'housing' | 'companies' | 'politics' | 'government' | 'ads' | 'net';
 const SECTIONS: [Section, string][] = [
   ['overview', 'Overview'], ['economy', 'Economy'], ['markets', 'Markets'], ['people', 'People'],
-  ['housing', 'Housing & land'], ['companies', 'Companies'], ['government', 'Government'], ['net', 'Net & media'],
+  ['housing', 'Housing & land'], ['companies', 'Companies'], ['politics', 'Politics'], ['government', 'Government'], ['ads', 'Advertising'], ['net', 'Net & media'],
 ];
 const RANGES: [number, string][] = [[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [0, 'All time']];
 
@@ -151,9 +152,20 @@ export class StatsView {
       case 'people': return this.people();
       case 'housing': return this.housing();
       case 'companies': return this.companies();
+      case 'politics': return politicsParts(() => this.sim, this.helpers());
       case 'government': return this.government();
+      case 'ads': return adsParts(() => this.sim, this.helpers());
       case 'net': return this.net();
     }
+  }
+
+  private helpers() {
+    return {
+      chart: (title: string, sub: string, series: (days: DailyStat[]) => Series[], opts?: Record<string, unknown>) => this.chart(title, sub, series, opts as ConstructorParameters<typeof TimeChart>[2]),
+      s: (name: string, color: string, days: DailyStat[], f: (d: DailyStat) => number | null | undefined) => this.s(name, color, days, f),
+      keyed: (days: DailyStat[], pick: (d: DailyStat) => Record<string, number>) => this.keyed(days, pick),
+      onSelect: this.onSelect,
+    };
   }
 
   private overview(): Part[] {
@@ -262,6 +274,13 @@ export class StatsView {
         this.s('Office work billed outside', slot(1), d, (x) => (x.flows['svc:Soft'] ?? 0) + (x.flows['svc:Pro'] ?? 0)),
         this.s('Bought from outside', slot(2), d, (x) => x.flows.imports ?? 0)]),
       this.chart('Wages paid per day', 'Everything employers paid their staff in the day.', (d) => [this.s('Wages', slot(0), d, (x) => x.flows.wages ?? 0)], { kind: 'area' }),
+      this.chart('People\'s income per day, by source', 'What residents earned: wages, dividends from companies they own, gig work, day labor, and government payments (welfare and the resident dividend). Stacked: the top edge is all income.', (d) => [
+        this.s('Wages', slot(0), d, (x) => x.flows.wages ?? 0),
+        this.s('Dividends', slot(1), d, (x) => x.flows.dividends ?? 0),
+        this.s('Gig work', slot(2), d, (x) => x.flows.gigpay ?? 0),
+        this.s('Day labor', slot(3), d, (x) => x.flows.daylaborpay ?? 0),
+        this.s('Government payments', slot(4), d, (x) => (x.flows['gsp:welfare'] ?? 0) + (x.flows['gsp:resident dividend'] ?? 0)),
+      ], { kind: 'stacked' }),
       this.chart('Company sales by sector', 'Sales in each company\'s last business day, by sector. Stacked: the top edge is all sales.', (d) => this.sectorSeries(d, (x) => x.revenue), { kind: 'stacked' }),
       this.chart('Inflation', 'How much the cost of a day\'s living (food, things, rent) changed over the previous 30 days.', (d) => {
         const all = this.sim.state.daily ?? [];
@@ -342,6 +361,18 @@ export class StatsView {
   }
 
   private people(): Part[] {
+    const richest = new BarList('Richest people (now)', 'Net worth: cash, goods, property and companies, minus debts.', compact);
+    const wagesBySector = new BarList('Median wage by sector (now)', 'The middle wage per shift in each sector (number of jobs in brackets).', compact, 'var(--series-2)');
+    const roles = document.createElement('div');
+    roles.className = 'sv-card';
+    const fillRoles = () => {
+      const s = this.sim.state;
+      const by = new Map<string, { n: number; open: number; wages: number[] }>();
+      for (const c of s.contracts) { const e = by.get(c.role) ?? { n: 0, open: 0, wages: [] }; e.n++; e.wages.push(c.wage); by.set(c.role, e); }
+      for (const p of s.postings) { const e = by.get(p.role) ?? { n: 0, open: 0, wages: [] }; e.open += p.openings ?? 1; by.set(p.role, e); }
+      const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n).map(([role, e]) => { e.wages.sort((a, b) => a - b); return `<tr><td>${ROLE[role as keyof typeof ROLE]?.label ?? role}</td><td class="r">${whole(e.n)}</td><td class="r">${whole(e.open)}</td><td class="r">${e.wages.length ? compact(e.wages[Math.floor(e.wages.length / 2)]) : '—'}</td></tr>`; });
+      roles.innerHTML = `<div class="sv-card-h"><div><div class="sv-title">Jobs by role (now)</div><div class="sv-sub">People employed in each kind of job, open positions, and the middle wage per shift.</div></div></div><div class="sv-scroll"><table class="sv-mtable"><tr><th>Role</th><th class="r">Employed</th><th class="r">Open</th><th class="r">Median wage</th></tr>${rows.join('')}</table></div>`;
+    };
     const wealthCols = new Columns('How wealth is spread (now)', 'People by net worth: cash, goods, property and companies, minus debts.');
     const lorenz = new TimeChart('Inequality curve (now)', 'Share of all wealth held by the poorest X% of people. The further the curve sags below the straight line, the more unequal.', { fmt: percent, fmtX: (i) => `poorest ${i * 5}%` });
     return [
@@ -378,6 +409,19 @@ export class StatsView {
         this.s('Mood', slot(0), d, (x) => x.mood), this.s('Happiness', slot(1), d, (x) => x.happy)], { fmt: percent }),
       this.chart('Online and on wheels', 'Share of people with a phone or computer, and cars per person.', (d) => [
         this.s('Online', slot(0), d, (x) => x.online / Math.max(1, x.pop)), this.s('Cars per person', slot(1), d, (x) => x.cars / Math.max(1, x.pop))], { fmt: percent }),
+      this.chart('Who owns the wealth', 'Shares of all wealth held by the poorer half, the next 40%, and the richest 10%. Stacked: together they make 100%.', (d) => [
+        this.s('Poorer half', slot(0), d, (x) => x.wealthShares?.bottom50), this.s('Next 40%', slot(1), d, (x) => x.wealthShares?.middle40), this.s('Richest 10%', slot(2), d, (x) => x.wealthShares?.top10)], { kind: 'stacked', fmt: percent }),
+      this.live(richest.el, () => {
+        const ctx = this.sim.ctx;
+        richest.set(this.sim.state.people.map((p) => ({ label: p.name, value: wealthOf(ctx, p), onClick: () => this.onSelect('person', p.id) })).sort((a, b) => b.value - a.value), 15);
+      }),
+      this.live(wagesBySector.el, () => {
+        const ctx = this.sim.ctx;
+        const by = new Map<Sector, number[]>();
+        for (const c of this.sim.state.contracts) { const f = ctx.fById.get(c.firm); if (!f) continue; const sec = sectorOf(ctx, f); const a = by.get(sec) ?? []; a.push(c.wage); by.set(sec, a); }
+        wagesBySector.set([...by.entries()].map(([sec, ws]) => { ws.sort((a, b) => a - b); return { label: `${SECTOR_LABEL[sec]} (${ws.length})`, value: ws[Math.floor(ws.length / 2)] }; }).sort((a, b) => b.value - a.value));
+      }),
+      { el: roles, update: () => fillRoles() },
     ];
   }
 
@@ -407,6 +451,65 @@ export class StatsView {
     const host = table.querySelector('.sv-scroll') as HTMLDivElement;
     let sortBy = 3;
     const employers = new BarList('Biggest employers (now)', 'People on the payroll.', whole);
+    const sectorProfit = new DivergingBars('Profits by sector (yesterday)', 'All companies\' profit or loss in their last business day, added up by sector.', 'loss', 'profit', compact, 'var(--div-pos)', 'var(--div-neg)');
+    const ranked = new RankedBars('Profit or loss of every company (yesterday)', 'One thin bar per company, from the biggest loss to the biggest profit in its last business day. Hover to see which; click to open it.', compact, (id) => this.onSelect('firm', id));
+    // every company's earnings: a full table with a sector filter and a search box
+    const earnings = document.createElement('div');
+    earnings.className = 'sv-card sv-wide';
+    earnings.innerHTML = `<div class="sv-card-h"><div><div class="sv-title">Every company's earnings</div><div class="sv-sub">All companies with their sales and profit in the last business day, the profit trend over the last 30 days, and what they're worth. Sort by any column; filter by sector or name. Click a company to open it.</div></div></div>
+      <div class="sv-filterrow"><input class="sv-search" placeholder="Search companies…"><div class="group sv-chips"><button data-sec="" class="on">All</button>${SECTORS.map((sec) => `<button data-sector="${sec}">${SECTOR_LABEL[sec]}</button>`).join('')}</div></div><div class="sv-scroll sv-tall"></div>`;
+    const ehost = earnings.querySelector('.sv-tall') as HTMLDivElement;
+    let esort = 5, esector = '', equery = '';
+    earnings.querySelector('.sv-search')!.addEventListener('input', (e) => { equery = (e.target as HTMLInputElement).value.toLowerCase(); fillEarnings(); });
+    earnings.querySelector('.sv-chips')!.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
+      if (!b) return;
+      esector = b.dataset.sector ?? '';
+      earnings.querySelectorAll('.sv-chips button').forEach((x) => x.classList.toggle('on', x === b));
+      fillEarnings();
+    });
+    const fillEarnings = () => {
+      const ctx = this.sim.ctx;
+      const staff = new Map<number, number>();
+      for (const c of this.sim.state.contracts) staff.set(c.firm, (staff.get(c.firm) ?? 0) + 1);
+      const head = ['Company', 'Sector', 'Owner', 'Employees', 'Sales', 'Profit', '30-day trend', 'Profit, 30 days', 'Cash', 'Value'];
+      const rows = this.sim.state.firms.filter((f) => !f.closed && !ctx.govOfFirm.has(f.id)).map((f) => {
+        const sec = sectorOf(ctx, f);
+        const hist = f.hist?.profit ?? f.ledger.days;
+        const sum30 = hist.slice(-30).reduce((a, v) => a + v, 0);
+        return { f, sec, hist, cells: [f.name, SECTOR_LABEL[sec], f.owner === OUTSIDE.id ? 'outside owners' : nameOf(ctx, f.owner), staff.get(f.id) ?? 0, f.lastRevenue ?? f.revenueAvg ?? 0, f.ledger.days[f.ledger.days.length - 1] ?? 0, 0, sum30, f.cash, firmValue(ctx, f)] as (string | number)[] };
+      }).filter((r) => (!esector || r.sec === esector) && (!equery || r.f.name.toLowerCase().includes(equery)));
+      rows.sort((a, b) => (typeof a.cells[esort] === 'string' ? String(a.cells[esort]).localeCompare(String(b.cells[esort])) : (b.cells[esort] as number) - (a.cells[esort] as number)));
+      const t = document.createElement('table');
+      t.className = 'sv-mtable';
+      const tr = document.createElement('tr');
+      head.forEach((h, i) => {
+        const th = document.createElement('th');
+        th.textContent = h + (i === esort ? ' ▾' : '');
+        th.className = (i > 2 && i !== 6 ? 'r ' : '') + (i === 6 ? '' : 'sv-click');
+        if (i !== 6) th.addEventListener('click', () => { esort = i; fillEarnings(); });
+        tr.appendChild(th);
+      });
+      t.appendChild(tr);
+      for (const r of rows) {
+        const row = document.createElement('tr');
+        row.className = 'sv-click';
+        row.addEventListener('click', () => this.onSelect('firm', r.f.id));
+        r.cells.forEach((c, i) => {
+          const td = document.createElement('td');
+          if (i === 6) td.innerHTML = sparkline(r.hist.slice(-30), 80, 18);
+          else td.textContent = typeof c === 'number' ? (i === 3 ? whole(c) : compact(c)) : c;
+          if (i > 2 && i !== 6) td.className = 'r';
+          if ((i === 5 || i === 7) && typeof c === 'number') td.classList.add(c < 0 ? 'neg' : 'pos');
+          row.appendChild(td);
+        });
+        t.appendChild(row);
+      }
+      const note = document.createElement('p');
+      note.className = 'muted small';
+      note.textContent = `${rows.length} companies`;
+      ehost.replaceChildren(note, t);
+    };
     const conc = new BarList('How concentrated each sector is (now)', 'The biggest company\'s share of its sector\'s sales. Near 100%: one company dominates.', percent, 'var(--series-2)');
     const fillTable = () => {
       const ctx = this.sim.ctx;
@@ -464,6 +567,17 @@ export class StatsView {
         }
         conc.set([...bySec.entries()].filter(([, e]) => e.total > 0).map(([sec, e]) => ({ label: SECTOR_LABEL[sec], value: e.top / e.total, note: e.name })).sort((a, b) => b.value - a.value));
       }),
+      this.chart('All companies\' profits per day', 'Profit (or loss) of every company added up, in its last business day.', (d) => [
+        this.s('Total profit', slot(0), d, (x) => (x.profit ? Object.values(x.profit).reduce((a, v) => a + (v ?? 0), 0) : null))], { free: true }),
+      this.live(sectorProfit.el, () => {
+        const d = this.sim.state.daily?.at(-1);
+        sectorProfit.set(SECTORS.filter((sec) => d?.profit?.[sec] !== undefined).map((sec) => ({ label: SECTOR_LABEL[sec], value: d!.profit![sec] ?? 0 })).sort((a, b) => b.value - a.value));
+      }),
+      this.live(ranked.el, () => {
+        const ctx = this.sim.ctx;
+        ranked.set(this.sim.state.firms.filter((f) => !f.closed && !ctx.govOfFirm.has(f.id)).map((f) => ({ label: f.name, value: f.ledger.days[f.ledger.days.length - 1] ?? 0, id: f.id })));
+      }),
+      { el: earnings, update: () => fillEarnings() },
     ];
   }
 

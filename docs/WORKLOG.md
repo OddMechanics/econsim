@@ -281,3 +281,15 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   books); `statcharts.ts` (time charts: lines/stacked/area with readouts, end labels and table views; bar lists; columns;
   order-book depth; sparklines) and `statsview.ts` (8 sections, time-range filter). Colors validated (dark surface).
   The charts showed a bug: the resident dividend counted itself as spending and paid only every other day (fixed).
+- More statistics (user: "more detailed… all company earnings… a political compass with everyone's dot"; "make it way easier
+  to track politics… election ads"; "make ads more sophisticated"): `statspolitics.ts` (Politics: elections at a glance,
+  polls, campaign ad wall, compass with party/wealth/work coloring, group leanings, trends, results; Advertising: channel
+  effectiveness, advertisers and budget splits, ad spaces). Companies: every company's earnings (search, sector filter,
+  30-day sparkline), ranked profit bars, profits by sector. People: wealth shares, richest, wages by sector, jobs by role.
+  Sim: DailyStat gains politics, profits, wealth shares, polls; Firm.hist (60 days); ad impressions/conversions by
+  channel with learned budget splits, audiences, saturation; campaigns with polls, swing targeting, attack ads (Politics.neg,
+  votes), turnout boost; `s.adLog`.
+- Bug reports from the user: leased floors looked empty (3D only drew people when the exact unit was selected; firm
+  selection never opened buildings) and some really were (software firms held at zero staff; idle leased units kept).
+  Fixed both. "The richest person is digging clay": owners' own-work ignored the value of money; fixed (wealthy owners
+  hire/oversee; early retirement).

@@ -256,10 +256,12 @@ function staffWanted(ctx: Ctx, f: Firm, b: Building): { role: Role; want: number
       const mult = serviceRate(ctx, serviceMarket(role === 'manager' ? 'clerk' : role));
       const recent = f.ledger.days.slice(-5).reduce((a, x) => a + x, 0);
       const young = ctx.s.tick - f.founded < 20 * 1440;
+      // a core team to keep going whatever the export market does (an internet company runs its sites)
+      const core = Math.min(max, f.kind === 'office' ? 2 : 3);
       if (role === 'manager') want = 1;
-      else if (mult > 0.9 && (recent > 0 || young)) want = Math.min(max, have + (f.kind === 'office' ? 5 : 3));
-      else if (mult < 0.8 && recent < 0 && !young) want = Math.max(1, have - 1);
-      else want = Math.min(max, have);
+      else if (mult > 0.9 && (recent > 0 || young)) want = Math.min(max, Math.max(core, have + (f.kind === 'office' ? 5 : 3)));
+      else if (mult < 0.8 && recent < 0 && !young) want = Math.max(core, have - 1);
+      else want = Math.max(core, Math.min(max, have));
     } else if (def.service === 'admin') {
       // a company's head office: about one clerk for every nine people the company employs
       const n = employeesOf(ctx, f);
@@ -320,6 +322,10 @@ export function firmDaily(ctx: Ctx, f: Firm): void {
   f.ledger.days.push(profit);
   if (f.ledger.days.length > 14) f.ledger.days.shift();
   f.lastRevenue = f.ledger.revenue;
+  f.hist ??= { rev: [], profit: [] };
+  f.hist.rev.push(Math.round(f.ledger.revenue * 100) / 100);
+  f.hist.profit.push(Math.round(profit * 100) / 100);
+  if (f.hist.rev.length > 60) { f.hist.rev.shift(); f.hist.profit.shift(); }
   f.ledger.revenue = 0;
   f.ledger.costs = 0;
   f.losing = profit < 0 ? f.losing + 1 : 0;
@@ -336,6 +342,11 @@ export function firmDaily(ctx: Ctx, f: Firm): void {
     if (!b.built) {
       if (b.builder === -1) procureMaterials(ctx, f, b, owner);
       continue;
+    }
+    // a leased shop or office floor nobody has worked in for days: given back (if the company has somewhere else)
+    if (b.host !== undefined && b.lease?.tenant === f.id) {
+      b.idle = staffAt(ctx, b.id).length ? 0 : (b.idle ?? 0) + 1;
+      if (b.idle >= 5 && sites.length > 1) { vacate(ctx, b, 'nobody was working there'); continue; }
     }
     reprice(ctx, f, b, owner);
     procure(ctx, f, b, owner);
@@ -354,6 +365,7 @@ export function firmDaily(ctx: Ctx, f: Firm): void {
     const div = (f.cash - reserve) * 0.25;
     addCash(ctx, f.id, -div);
     addCash(ctx, f.owner, div);
+    if (ctx.byId.has(f.owner)) tally(ctx, 'dividends', div);
   }
   // a hired manager doesn't start new ventures with someone else's company
   if (owner.id === f.owner) maybeExpand(ctx, f, owner);
@@ -690,6 +702,9 @@ function diversify(ctx: Ctx, f: Firm, owner: Person, avg: number, builders: bool
 /** Open another site of the same kind when it pays well (keeping money to run the old ones). */
 function expand(ctx: Ctx, f: Firm, owner: Person, avg: number, builders: boolean): boolean {
   if (avg <= 12 || sitesOf(ctx, f).length >= 6 || f.cash <= workingCapital(ctx, f) + 100 || !(builders || BUILDINGS[f.kind].leasable)) return false;
+  // software and consulting firms only take more space while the world wants more of their work
+  const svc = BUILDINGS[f.kind].service;
+  if ((svc === 'net' || (svc === 'admin' && f.kind === 'office')) && serviceRate(ctx, svc === 'net' ? 'Soft' : 'Pro') < 0.9) return false;
   const kind = f.kind;
   // shops and restaurants: a second location in a vacant shopfront
   const lease = BUILDINGS[kind].leasable ? vacantUnits(ctx, BUILDINGS[kind].leasable!)[0] : undefined;

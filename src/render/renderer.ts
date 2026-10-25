@@ -392,7 +392,12 @@ export class WorldRenderer {
     let id: number | null = null;
     const sel = this.selection;
     if (sel?.type === 'building') id = sel.id;
-    else if (sel?.type === 'person') {
+    else if (sel?.type === 'firm' && this.camera.radius < 200) {
+      // a company: open up its main site (a leased floor opens its tower at that floor)
+      const f = this.sim.ctx.fById.get(sel.id);
+      const site = f?.sites.map((s) => this.sim.ctx.bById.get(s)).find((b) => b?.built && !b.ruined);
+      if (site) id = site.id;
+    } else if (sel?.type === 'person') {
       const p = this.sim.ctx.byId.get(sel.id);
       if (p && p.inside >= 0 && this.camera.radius < 140) id = p.inside;
     }
@@ -417,7 +422,8 @@ export class WorldRenderer {
         const b = ctx.bById.get(p.inside);
         if (!b) continue;
         const st = p.seat >= 0 ? stationsOf(b)[p.seat] : undefined;
-        const open = st?.outside || !b.built || this.cutaway === b.id;
+        // inside: drawn when the building is opened up (a tower opened up shows its shops and office floors too)
+        const open = st?.outside || !b.built || this.cutaway === b.id || (b.host !== undefined && this.cutaway === b.host);
         if (!open) continue;
         z = heightAt(w, b.x, b.y) + (st ? st.floor * FLOOR_H : 0) + standHeight(b); // (a trailer's floor is up on blocks)
         if (p.pose === 'sleep') z += 0.5;

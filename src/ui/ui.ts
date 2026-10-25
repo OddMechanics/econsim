@@ -970,7 +970,9 @@ export class UI {
     const stock = GOODS.filter((g) => b.store[g] >= 0.5).map((g) => `${Math.floor(b.store[g])} ${GOOD[g].label}`).join(', ') || 'empty';
     const needed = GOODS.filter((g) => b.needed[g] > 0).map((g) => `${Math.ceil(b.needed[g])} ${GOOD[g].label}`).join(', ');
     const staff = s.contracts.filter((c) => c.site === b.id);
-    const inside = s.people.filter((p) => p.inside === b.id);
+    // (a tower: its residents and visitors, and the people in its shops and offices)
+    const units = new Set([b.id, ...(b.hosted ?? [])]);
+    const inside = s.people.filter((p) => units.has(p.inside));
     const workers = staff.map((c) => {
       const w = ctx.byId.get(c.person);
       return w ? `<div class="row" data-person="${w.id}">${this.dot(w)}<div class="main"><div class="name">${esc(w.name)}</div><div class="sub">${ROLE[c.role].label} · ${esc(w.activity)}</div></div><div class="num">${c.wage.toFixed(1)}<div class="sub">per shift</div></div></div>` : '';

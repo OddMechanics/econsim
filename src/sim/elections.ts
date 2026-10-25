@@ -228,6 +228,8 @@ export function utility(ctx: Ctx, g: Polity, v: Person, c: Candidate, noise = tr
     u += 0.8 * retro + 0.3; // plus the plain advantage of being known and in office
   }
   u += 0.3 * Math.log(1 + 10 * (v.pol.aware[c.person] ?? 0));
+  // what attack ads against them left behind
+  u -= 1.2 * (v.pol.neg?.[c.person] ?? 0);
   u += 0.3 * (cand.traits.communication - 0.5);
   const r = v.rel[c.person];
   if (r) u += 0.8 * r.trust - 0.4 * r.bad;

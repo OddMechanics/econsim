@@ -162,10 +162,16 @@ function workOption(v: View): Option | null {
   };
 }
 
-/** Owners keep their own sites running when nobody else does. */
+/**
+ * Owners keep their own sites running when nobody else does: worth more the
+ * less money they have (a struggling founder pitches in; a rich owner hires
+ * someone and, at most, drops by to look after the business).
+ */
 function ownWorkOptions(v: View): Option[] {
   const { ctx, p } = v;
   const out: Option[] = [];
+  const wealthy = p.money > 40 * referenceWage(ctx);
+  let checked = false;
   for (const fid of p.firms) {
     const f = ctx.fById.get(fid);
     if (!f || f.closed) continue;
@@ -181,9 +187,22 @@ function ownWorkOptions(v: View): Option[] {
       const r = def.recipe;
       if (r && Object.entries(r.inputs).some(([g, q]) => b.store[g as Good] < q! * 2) && f.cash < 5) continue;
       const until = Math.min(ctx.s.tick + 240, dayStart(ctx.s.tick) + end * 60);
+      if (wealthy) {
+        // the company hires for it; the owner looks in on the business now and then (no digging, no machines)
+        if (checked || cooling(v, 'oversee:' + f.id)) continue;
+        checked = true;
+        out.push({
+          label: `Look after the business (${f.name})`,
+          score: cap(0.4 + 1.2 * p.traits.ambition + (f.losing > 2 ? 0.6 : 0) - 0.5 * v.effort),
+          why: 'nobody works there yet; they can afford to hire, so they check on things rather than do the work',
+          steps: () => { p.cooldown['oversee:' + f.id] = ctx.s.tick + 720; return [go(b), { k: 'idle', mins: 90, label: `looking after ${f.name}`, pose: 'stand' }]; },
+        });
+        continue;
+      }
       out.push({
         label: `Work at own ${def.label.toLowerCase()} (${f.name})`,
-        score: cap(2 + 2 * p.traits.ambition + (f.cash < 20 ? 1 : 0) - v.effort),
+        // pitching in pays (in their eyes) the more, the less money they have
+        score: cap(0.6 + 2.2 * v.mv + 1.2 * p.traits.ambition + (f.cash < 20 ? 1 : 0) - v.effort),
         why: 'nobody else is working there yet',
         steps: () => [go(b), { k: 'ownWork', bid: b.id, until }],
       });
@@ -1225,5 +1244,7 @@ export function reviewJob(ctx: Ctx, p: Person): void {
   const c = ctx.cById.get(p.job);
   if (!c || c.noticeEnd > 0) return;
   if (c.unpaid >= 2) quit(ctx, c, 'not being paid');
+  // enough saved that the pay no longer matters: the less ambitious retire early
+  else if (p.money > 150 * c.wage && p.traits.ambition < 0.65 && ctx.rng.chance(0.08)) quit(ctx, c, "retiring: doesn't need the money any more");
 }
 

@@ -217,6 +217,32 @@ What's new:
     - **Chart rules:** one y-axis per chart. Two measures on different scales go in separate charts, or are both indexed to 100 (wages against prices). Each chart has a hover readout and a table view, and colors follow the sector or series everywhere.
     - **A bug the charts showed:** the resident dividend counted itself as spending, so it was only paid every other day. Fixed.
 
+99. **More statistics** (you asked for "more detailed… all company earnings or a political compass with everyone's dot"):
+    - **Politics section:**
+      - Elections at a glance: next election dates; candidates with party, views, poll, funds, spending, ads bought and attack ads against them; who's in office.
+      - Polls for the next race, day by day.
+      - Campaign money by candidate.
+      - A wall of campaign ads (filter: attack ads).
+      - The political compass: every resident as a dot, colored by party (the 3 biggest), wealth fifth or work; hover names the person, click opens them.
+      - How views are spread on each axis; how groups lean by wealth, work and home; average views, party members, interest and grievance, protesters; past results.
+    - **Advertising section:** for each channel, the spend, times seen, new customers, cost per 1,000 views and cost per new customer. Also the biggest advertisers and their budget splits, the street ad spaces, and campaign ad spending per day.
+    - **Companies:** every company's earnings in a searchable table with a sector filter and a 30-day profit trend; one bar per company from biggest loss to biggest profit; profits by sector; total profits per day. Losses are red, profits blue.
+    - **People:** who owns the wealth (poorer half / next 40% / top 10%), the richest residents, median wage by sector, jobs by role.
+    - **Economy:** people's income by source (wages, dividends, gig work, day labor, government payments).
+100. **Smarter ads:**
+    - **Diminishing returns:** each further sighting adds less awareness once a brand is well known (× (1 − 0.7 × awareness)).
+    - **Targeting:** online ads reach likely buyers 2.5× more often: car dealers people without a car with 250+, banks savers with 500+, restaurants the hungry, job sites the jobless.
+    - **Measured results:** a first visit to a place someone learned about from an ad counts as a new customer for that ad's channel.
+    - **Learning budgets:** consumer brands move 10% a day of their budget split toward the channels with the most new customers per coin (smoothed over about a week), keeping at least 5% in each channel.
+    - **Campaigns:** online ads aim at the undecided (weaker party loyalty, some interest in politics). A candidate more than 8 points behind the leader puts 40% of online money (and half of TV spots) into attack ads against them. An attack leaves a fading bad impression that costs the target votes (−1.2 × impression). Ads also fire up supporters who already agree (more likely to vote).
+    - **Ad log:** every campaign ad is recorded (last 400).
+101. **Rich people don't do manual work:**
+    - An owner with more than 40 days' typical wages no longer works hands-on at their own site; their company hires instead. They may "Look after the business" (90 minutes, no labor, at most twice a day per company).
+    - Less well-off owners pitch in, more eagerly the less money they have.
+    - Employees with savings over 150 shifts' pay who aren't very ambitious may retire (8% a day).
+    - (People already value money less as they get richer; working at their own company was the one choice that ignored it.)
+102. **Leased offices are staffed:** software and consulting firms keep a core team (3 programmers / 2 clerks per site) whatever their export market does, and only lease more space while their market pays full price. A leased shop or office floor with nobody employed for 5 business days is given back (if the company has another site). The 3D view shows people on leased floors when their tower or company is selected, and a tower's panel counts everyone inside.
+
 Your rule for this (2026-10-24): nobody is forced to build a tower. Towers should come from people's and companies' own decisions in an urban economy; skyscrapers were never the goal in themselves.
 
 ### What a run looks like now (headless, final code apart from #93, 2026-10-24)

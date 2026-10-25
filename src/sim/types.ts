@@ -173,6 +173,7 @@ export interface KnownPlace {
   t: number; // last time it came to mind: seen, heard of, visited
   seen?: number; // last visit (tick)
   op?: number; // what they think of it, -1 (avoid) … 1 (love it)
+  ch?: AdChannel; // learned from an ad: which kind (to credit the ad when they first go there)
 }
 
 export interface PriceBelief {
@@ -398,6 +399,8 @@ export interface Politics {
   threshold: number; // share of visible protesting contacts that makes them join
   protesting: number; // protest event id, -1
   contacted: number; // tick a campaign last knocked on their door
+  /** Bad impressions of candidates from attack ads (person id -> 0..1), fading. */
+  neg?: Record<number, number>;
 }
 
 export interface Brain {
@@ -492,6 +495,8 @@ export interface Building {
   level?: number;
   /** Towers: their hosted units (building ids). */
   hosted?: number[];
+  /** A leased unit: business days in a row with nobody employed there (the tenant gives it up after a few). */
+  idle?: number;
   /** The operating company rents the building (or unit) from its owner. */
   lease?: Lease;
 }
@@ -511,6 +516,13 @@ export interface Firm {
   ledger: Ledger;
   /** Sales in its last full business day (for statistics). */
   lastRevenue?: number;
+  /** Sales and profit of its last 60 business days, oldest first (for statistics). */
+  hist?: { rev: number[]; profit: number[] };
+  /** Today's ad results: people who saw its ads, and new customers who came because of one, by channel. */
+  adToday?: { imp: Partial<Record<AdChannel, number>>; conv: Partial<Record<AdChannel, number>> };
+  /** What each channel has been costing and bringing in (smoothed daily), and how the budget is split. */
+  adPerf?: { spend: Partial<Record<AdChannel, number>>; conv: Partial<Record<AdChannel, number>>; imp: Partial<Record<AdChannel, number>> };
+  adMix?: Partial<Record<AdChannel, number>>;
   reputation: number; // 0..1
   sales: Record<string, number>; // today's units sold (goods, 'meal', 'freight', 'build')
   salesAvg: Record<string, number>; // recent daily average
@@ -663,6 +675,21 @@ export interface Vehicle {
  * a flyer taped to a street lamp, a banner. Position is the center of the ad
  * face; `angle` is the direction it faces (sim radians, like headings).
  */
+/** Where an ad was seen. */
+export type AdChannel = 'street' | 'net' | 'tv' | 'influencer';
+
+/** A political ad bought in a campaign (for the statistics window's list of election ads). */
+export interface AdLogEntry {
+  t: number;
+  election: number;
+  sponsor: number; // the candidate (person id)
+  kind: 'poster' | 'billboard' | 'space' | 'tv' | 'online' | 'attack';
+  target?: number; // an attack ad: the opponent it's about
+  headline: string;
+  tagline: string;
+  cost: number;
+}
+
 export interface AdPlacement {
   id: number;
   /**
@@ -1151,6 +1178,17 @@ export interface DailyStat {
   adSpend: { street: number; net: number; tv: number; influencer: number };
   siteUsers: number;
   tvViewers: number;
+  // politics (added later: may be missing in older records)
+  compass?: { econ: number; auth: number }; // average position
+  engagement?: number; // average interest in politics 0..1
+  grievance?: number; // average grievance with the government
+  protesting?: number; // people at a protest at day's end
+  parties?: Record<string, number>; // members per party (by name)
+  // money (added later)
+  profit?: Partial<Record<Sector, number>>; // over the last business day
+  wealthShares?: { bottom50: number; middle40: number; top10: number; top1: number };
+  /** The main government's coming election: poll shares for its top office (candidate name -> share). */
+  polls?: { election: number; office: string; shares: Record<string, number> };
 }
 
 export interface DeadPerson {
@@ -1205,6 +1243,8 @@ export interface SimState {
   daily?: DailyStat[];
   /** Running totals for the current day (spending by kind, imports, exports…), reset each midnight. */
   today?: Record<string, number>;
+  /** Political ads bought in campaigns (latest few hundred). */
+  adLog?: AdLogEntry[];
   log: LogEntry[];
   scenarios: ScenarioState[];
   counters: {
