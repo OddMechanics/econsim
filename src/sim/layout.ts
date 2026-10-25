@@ -262,11 +262,14 @@ function generate(kind: BuildingKind, w: number, d: number, floors: number, seed
       grid(staff('builder'), 0, 'outdoor', 'builder', -iw / 2 + 1, iw / 2 - 1, -d / 2 - 6, -d / 2 - 2, 0);
       out.forEach((s) => { s.outside = true; });
       break;
-    case 'farm': {
-      // fields behind the farmhouse
+    case 'farm':
+    case 'vegfarm':
+    case 'dairyfarm':
+    case 'ranch': {
+      // out in the fields or pasture behind the farm buildings (past the farmyard, still on a small farm's lot)
       const n = staff('farmhand');
       for (let i = 0; i < n; i++) {
-        out.push({ lx: -18 + ((i + 0.5) / n) * 36, lz: -d / 2 - 10 - rnd(i) * 14, floor: 0, kind: 'field', facing: 0, role: 'farmhand', outside: true });
+        out.push({ lx: -18 + ((i + 0.5) / n) * 36, lz: -d / 2 - 18 - rnd(i) * 18, floor: 0, kind: 'field', facing: 0, role: 'farmhand', outside: true });
       }
       break;
     }
