@@ -1,10 +1,11 @@
 import { MINUTES_PER_DAY, NEEDS, OUTSIDE, POPULATION, WAGES } from './config';
+import { healthCap, seriousDrain } from './health';
 import { cityPop, isNight, log, newId, type Ctx } from './ctx';
 import { BUILDINGS, DURABLES, EDIBLE, emptyInv, GOOD } from './goods';
 import { randomName } from './names';
 import { nearestRoadPoint } from './roads';
 import { initPolitics, ORIGINS } from './ideology';
-import { GOODS, type Good, type Looks, type Person, type PriceBelief } from './types';
+import { GATE, GOODS, type Good, type Looks, type Person, type PriceBelief } from './types';
 
 /** Set by sim.ts: newcomers' brains are inherited from people doing well. */
 let brainFrom: (ctx: Ctx) => Person['brain'] = () => undefined;
@@ -80,6 +81,7 @@ export function createPerson(ctx: Ctx, x: number, y: number, money: number, food
 
 /** Shelter (0..1) where the person is right now. */
 export function shelterHere(ctx: Ctx, p: Person): number {
+  if (p.ill?.admitted === GATE) return 1; // in the regional hospital outside the city
   if (p.inside < 0) return 0;
   const b = ctx.bById.get(p.inside);
   if (!b || !b.built || b.ruined) return 0;
@@ -141,8 +143,16 @@ export function updateNeeds(ctx: Ctx, p: Person, working: boolean, dt = 1): void
     const clothes = (p.durables.clothes ?? 0) > 0 ? 0.2 : 0;
     dh -= NEEDS.exposurePerHour * Math.max(0, 1 - shelter - clothes) * (p.sleeping ? 1 : 0.6);
   }
+  // illness: a serious one drains health; the others keep it below full (and tire them)
+  if (p.ill) {
+    dh -= seriousDrain(ctx, p);
+    if (!p.sleeping) n.energy = Math.max(0, n.energy - 2 * p.ill.sev * perMin);
+  }
   if (n.food > 25 && n.energy > 10 && dh === 0) dh += NEEDS.healthRegenPerHour;
-  n.health = Math.min(100, n.health + dh * perMin);
+  let h = n.health + dh * perMin;
+  const cap = healthCap(ctx, p);
+  if (h > cap) h = Math.max(cap, n.health - 3 * perMin);
+  n.health = Math.min(100, h);
 }
 
 /** Once a day: things wear out, mood follows how life is going, and so does happiness. */
@@ -189,11 +199,17 @@ function averageWage(ctx: Ctx): number {
 }
 
 export function causeOfDeath(p: Person): string {
-  return p.needs.food <= 0 ? 'starvation' : 'exposure';
+  if (p.needs.food <= 0) return 'starvation';
+  if (p.ill?.kind === 'serious' || (p.ill && p.exposure >= 0.5)) return 'illness';
+  return 'exposure';
 }
 
-/** Newcomers come in along the highway (by bus or a friend's car) and get out at the edge of town. */
-export function spawnNewcomer(ctx: Ctx): Person | null {
+/**
+ * Newcomers come in along the highway (by bus or a friend's car) and get out
+ * at the edge of town. A doctor or nurse comes for a job in their field
+ * (when one is open, or a clinic brings them).
+ */
+export function spawnNewcomer(ctx: Ctx, profession?: 'doctor' | 'nurse'): Person | null {
   const gate = ctx.s.gates.length ? ctx.s.gates[Math.floor(ctx.rng.next() * ctx.s.gates.length)] : ctx.s.center;
   // dropped off where the highway meets the city
   const t = 0.55 + 0.2 * ctx.rng.next();
@@ -213,7 +229,14 @@ export function spawnNewcomer(ctx: Ctx): Person | null {
     p.hourly *= 1.3;
   }
   p.brain = brainFrom(ctx);
+  // open positions for doctors and nurses draw some of them here
+  const trade = profession ?? (ctx.s.postings.some((q) => q.role === 'doctor') && ctx.rng.chance(0.25) ? 'doctor' : ctx.s.postings.some((q) => q.role === 'nurse') && ctx.rng.chance(0.25) ? 'nurse' : undefined);
+  if (trade) {
+    p.edu = Math.max(p.edu, trade === 'doctor' ? 19 + Math.floor(ctx.rng.next() * 3) : 14 + Math.floor(ctx.rng.next() * 3));
+    p.money += trade === 'doctor' ? 400 : 100;
+    p.hourly = Math.max(p.hourly, (WAGES.reference / 8) * (trade === 'doctor' ? 2.6 : 1.2));
+  }
   ctx.s.counters.arrivals++;
-  log(ctx, 'arrival', investor ? `${p.name} arrived with savings of ${money}, looking for opportunities.` : `${p.name} arrived in the city looking for a new life.`, { who: p.id });
+  log(ctx, 'arrival', trade ? `${p.name}, a ${trade}, moved to the city for work.` : investor ? `${p.name} arrived with savings of ${money}, looking for opportunities.` : `${p.name} arrived in the city looking for a new life.`, { who: p.id });
   return p;
 }

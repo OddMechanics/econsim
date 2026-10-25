@@ -1326,6 +1326,7 @@ const BUILDERS: Record<BuildingKind, (c: Ctx) => void> = {
   vegfarm: farm, dairyfarm: farm, ranch: farm, bakery: foodplant, dairyplant: foodplant, meatplant: foodplant,
   workshop, furniture: furniturePlant, textile, electronics, carplant,
   store, dealer, restaurant, office: officeBlock, depot, yard: constructionYard, bank: bankBlock, adco,
+  clinic: officeBlock, hospital: officeBlock, // (placeholders until they get their own looks)
   cityhall, studio, netco,
   shopfront: () => {}, suite: () => {}, // drawn by their tower
 };

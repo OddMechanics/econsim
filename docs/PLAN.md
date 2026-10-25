@@ -283,6 +283,35 @@ What's new:
     - **Highway fix:** Route 9 used to stop at the first lake. In some worlds that meant no highway at all.
     - **3D:** the ground out to the map's edge uses the same height formula. Fields are colored by crop; the farm model draws its rows over the whole field. Countryside woods have no trees yet.
 
+108. **Health and healthcare** (you said "we have to add in hospitals and healthcare"):
+    - **What people get** (chance per day before age and frailty):
+      - colds 0.5% and flu 0.12%, both catching from workmates and housemates;
+      - injuries: 0.16% in manual work, 0.03% otherwise;
+      - serious illness: 0.012%, rising with age^2.5, and 2× each for going hungry or sleeping rough;
+      - long-term conditions from age 45.
+      Getting over a cold makes someone immune for 20 days, the flu for 120. Flu can turn into pneumonia in the old and the frail.
+    - **What it does:**
+      - Mild illnesses keep health below full: by up to 25 (cold), 55 (flu), 50 (injury) or 35 (long-term) points at full severity. They make people tired and heal by themselves, 1.8× faster after a doctor's visit.
+      - Serious illness drains up to 3 health an hour: half that in a hospital bed, a sixth while staff are on duty. Only a hospital cures it (clinics slow it a little).
+      - Long-term conditions need a check-up every ~25–30 days or they flare up.
+      - Death from illness is a new cause.
+    - **What people do:**
+      - Too ill to work (flu, injury or serious, above 25%): they call in sick and stay home.
+      - They see a doctor when it's bad enough to be worth the price to them.
+      - In an emergency they go to the hospital at any hour, money or not (charity care). With no hospital bed in the city, an ambulance takes them to the regional hospital outside, and they're brought back when well (billed at 1.3× a bed-day; the money leaves the city).
+      - Countryside people do the same.
+    - **Clinics and hospitals:**
+      - **Clinic:** 2 doctors and 2 nurses, open 8–18. A doctor (18+ years of school) can open one, about 1 per 700 people. The CityCare chain opens one per 900 people from 120 up, bringing a doctor if none is free.
+      - **Hospital:** 3–8 floors of wards with a doctor and 2 nurses per floor, and an emergency room. Hospitals come from a hospital group (Mercy Health, 1 per 6,000 people, from 900) or from a city's council.
+      - **Prices:** a visit starts at 0.6 of a typical day's pay and a bed-day at 1.4. Prices go up when doctors are fully booked or the place loses money, and down when it's quiet.
+      - **Recruiting:** open doctor and nurse jobs draw doctors and nurses from outside (25% of newcomers while such jobs are open).
+    - **Who pays** (each city's policy):
+      - private: the patient pays.
+      - subsidized: the city pays half.
+      - public: the city pays everything.
+      A new city decides at its founding from the founders' views (welfare-minded and left: public; against welfare or right: private; otherwise subsidized). The council can change it, and can build a public hospital (from 400 residents, if the city pays at least half). Old saves start subsidized.
+    - **Also fixed:** the height limit was checking the wrong territory cells, and redrawing districts could crash when a split came out empty.
+
 Your rule for this (2026-10-24): nobody is forced to build a tower. Towers should come from people's and companies' own decisions in an urban economy; skyscrapers were never the goal in themselves.
 
 ### What a run looks like now (headless, final code apart from #93, 2026-10-24)

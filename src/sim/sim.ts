@@ -11,6 +11,7 @@ import { marketHourly, marketNewDay, outsideTrade, spoilFood } from './market';
 import { causeOfDeath, createPerson, personDaily, setBrainSource, spawnNewcomer, updateNeeds } from './people';
 import { countryPlaces, ensurePlaces, placesDaily } from './places';
 import { countryDaily, generateCountryside, isRural } from './countryside';
+import { healthDaily } from './health';
 import { recordDaily } from './stats';
 import { initRoads, makeAllLots, rezone } from './roads';
 import { seedRng } from './rng';
@@ -257,7 +258,9 @@ export class Simulation {
       r[LAST] = s.tick;
       p.px = p.x;
       p.py = p.y;
-      if (p.task && p.needs.food < 12 && foodIn(p.inv) < 1 && s.tick - p.task.started > 90 && p.driving < 0) p.task = null;
+      // starving and busy with something else for long: drop it (but not a trip to get food)
+      if (p.task && p.needs.food < 12 && foodIn(p.inv) < 1 && s.tick - p.task.started > 90 && p.driving < 0
+        && !p.task.steps.some((st) => st.k === 'shop' || st.k === 'soup' || st.k === 'eatOut' || st.k === 'order')) p.task = null;
       if (!p.task) {
         if (rural) decideCountry(ctx, p);
         else {
@@ -328,6 +331,7 @@ export class Simulation {
     scenariosDaily(ctx);
     for (const p of s.people) { personDaily(ctx, p); pruneRelations(p); politicsDaily(ctx, p); }
     housingDaily(ctx);
+    healthDaily(ctx);
     countryDaily(ctx);
     jobsDaily(ctx);
     this.emigration();

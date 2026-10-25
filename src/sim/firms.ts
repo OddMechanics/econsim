@@ -3,7 +3,8 @@
 // sells output, pays its owner dividends, and grows into a chain or a
 // corporation with an office building when it does well.
 
-import { JOBS, OUTSIDE } from './config';
+import { spawnNewcomer } from './people';
+import { JOBS, OUTSIDE, WAGES } from './config';
 import { addCash, cashOf, cityPop, controllerOf, log, newId, type Ctx } from './ctx';
 import { BUILDINGS, chooseFloors, EDIBLE, materialsFor, RETAIL_GOODS, slotsFor, workHoursFor } from './goods';
 import { createBuilding, farmFertility, findLot, transferBuilding } from './buildings';
@@ -145,6 +146,8 @@ const CHAINS: { brand: string; kind: BuildingKind; per: number; minPop: number; 
   { brand: 'Pizza Palace', kind: 'restaurant', per: 260, minPop: 180 },
   { brand: 'AutoNation', kind: 'dealer', per: 500, minPop: 150 },
   { brand: 'Metro Outdoor', kind: 'adco', per: 700, minPop: 120 },
+  { brand: 'CityCare', kind: 'clinic', per: 900, minPop: 120, capital: 3500 },
+  { brand: 'Mercy Health', kind: 'hospital', per: 6000, minPop: 900, capital: 15000 },
 ];
 
 /**
@@ -164,7 +167,11 @@ export function chainsDaily(ctx: Ctx): void {
     const mine = ctx.s.firms.find((f) => f.branch === c.brand && !f.closed);
     if (mine && mine.sites.length >= 1 + Math.floor(pop / (c.per * 2))) continue;
     // a manager from among the unemployed (or anyone looking)
-    const manager = ctx.s.people.filter((p) => p.job < 0 && !p.firms.length && p.edu >= 10).sort((a, b) => b.traits.diligence + b.traits.communication - a.traits.diligence - a.traits.communication)[0];
+    // (a clinic or hospital is run by a doctor)
+    const minEdu = BUILDINGS[c.kind].service === 'health' ? 18 : 10;
+    let manager: Person | undefined = ctx.s.people.filter((p) => p.job < 0 && !p.firms.length && p.edu >= minEdu).sort((a, b) => b.traits.diligence + b.traits.communication - a.traits.diligence - a.traits.communication)[0];
+    // a clinic or hospital group brings a doctor of its own from elsewhere if there's none to hire here
+    if (!manager && minEdu >= 18) manager = spawnNewcomer(ctx, 'doctor') ?? undefined;
     if (!manager) continue;
     const unit = BUILDINGS[c.kind].leasable ? vacantUnits(ctx, BUILDINGS[c.kind].leasable!)[0] : undefined;
     if (!unit && !yardFirms(ctx).length) continue;
@@ -202,6 +209,7 @@ function initPrices(f: Firm, owner: Person): void {
   if (def.service === 'freight') f.prices.freight = 0.02;
   if (def.service === 'build') f.prices.build = 1.25; // markup on cost
   if (def.service === 'finance') f.prices.rate = 0.0012; // interest per day
+  if (def.service === 'health') { f.prices.visit = WAGES.reference * 0.6; f.prices.bed = WAGES.reference * 1.4; }
   if (f.kind === 'apartments' || f.kind === 'tower' || f.kind === 'officetower') f.prices.build = 0;
 }
 
@@ -260,6 +268,11 @@ function staffWanted(ctx: Ctx, f: Firm, b: Building): { role: Role; want: number
     } else if (def.service === 'meal') {
       const meals = (f.salesAvg.meal ?? 0) / Math.max(1, f.sites.length);
       want = Math.min(max, Math.max(1, Math.ceil(meals / 18)));
+    } else if (def.service === 'health') {
+      // a doctor sees ~16 patients a day and looks after ~12 in beds; a nurse ~25 visits or ~5 beds
+      const visits = (f.salesAvg.visit ?? 0) / Math.max(1, f.sites.length);
+      const beds = b.kind === 'hospital' ? ctx.s.people.filter((q) => q.ill?.admitted === b.id).length : 0;
+      want = Math.min(max, Math.max(1, Math.ceil(role === 'doctor' ? visits / 16 + beds / 12 : visits / 25 + beds / 5)));
     } else if (def.service === 'freight') {
       const open = ctx.s.shipments.filter((s) => s.status === 'open').length;
       want = Math.min(max, Math.max(1, Math.ceil(open / 3)));

@@ -129,12 +129,14 @@ export const ROLE: Record<Role, RoleDef> = {
   civil: { label: 'civil servant', pose: 'type', station: 'desk', pay: 1.2, edu: 12 },
   officer: { label: 'police officer', pose: 'walk', station: 'outdoor', pay: 1.25, edu: 12 },
   sales: { label: 'sales rep', pose: 'talk', station: 'desk', pay: 1.3, edu: 12 },
+  doctor: { label: 'doctor', pose: 'talk', station: 'desk', pay: 3.2, edu: 18 },
+  nurse: { label: 'nurse', pose: 'stand', station: 'counter', pay: 1.35, edu: 14 },
 };
 
 // --------------------------------------------------------------- buildings
 
 export type Category = 'civic' | 'home' | 'primary' | 'industry' | 'service';
-export type Service = 'retail' | 'meal' | 'freight' | 'build' | 'admin' | 'cars' | 'finance' | 'government' | 'tv' | 'net' | 'ads' | 'lease';
+export type Service = 'retail' | 'meal' | 'freight' | 'build' | 'admin' | 'cars' | 'finance' | 'government' | 'tv' | 'net' | 'ads' | 'lease' | 'health';
 
 export interface Recipe {
   inputs: Partial<Inventory>; // per worker-hour
@@ -362,6 +364,16 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
     materials: { concrete: 12, bricks: 10, glass: 5, planks: 4 }, workHours: 20, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.0015,
     jobs: [{ role: 'cook', slots: 3 }, { role: 'waiter', slots: 3 }], service: 'meal', hours: h(11, 22), minFunds: 60, leasable: 'shopfront',
   },
+  clinic: {
+    label: 'Clinic', category: 'service', zones: ['core', 'urban', 'suburb'], w: 14, d: 12, floors: [1, 2],
+    materials: { concrete: 14, bricks: 10, glass: 6, steel: 3 }, workHours: 24, shelter: 0, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.0015,
+    jobs: [{ role: 'doctor', slots: 2 }, { role: 'nurse', slots: 2 }], service: 'health', hours: h(8, 18), minFunds: 150, leasable: 'shopfront',
+  },
+  hospital: {
+    label: 'Hospital', category: 'service', zones: ['core', 'urban', 'suburb'], w: 30, d: 24, floors: [3, 8],
+    materials: { concrete: 120, steel: 30, glass: 30, bricks: 40 }, perFloor: { concrete: 40, steel: 10, glass: 10 }, workHours: 300, shelter: 0.9, comfort: 0, unitsPerFloor: 0, decayPerDay: 0.001,
+    jobs: [{ role: 'doctor', slots: 2, perFloor: 1 }, { role: 'nurse', slots: 4, perFloor: 2 }], service: 'health', hours: h(7, 19), minFunds: 1500,
+  },
   office: {
     label: 'Office', category: 'service', zones: ['core', 'urban'], w: 16, d: 14, floors: [2, 12],
     materials: { concrete: 30, steel: 12, glass: 14 }, perFloor: { concrete: 16, steel: 5, glass: 8 },
@@ -415,7 +427,8 @@ export const BUILDINGS: Record<BuildingKind, BuildingDef> = {
 
 /** Kinds of company a person can start (towers are developments, see development.ts; units come with towers). */
 export const BUSINESS_KINDS = (Object.keys(BUILDINGS) as BuildingKind[]).filter(
-  (k) => BUILDINGS[k].category !== 'home' && BUILDINGS[k].category !== 'civic' && k !== 'officetower' && k !== 'shopfront' && k !== 'suite',
+  // (hospitals are built by cities and hospital groups, not by one person)
+  (k) => BUILDINGS[k].category !== 'home' && BUILDINGS[k].category !== 'civic' && k !== 'officetower' && k !== 'shopfront' && k !== 'suite' && k !== 'hospital',
 );
 
 /** Towers (residential or office): built by developers, hosting shops and office suites. */

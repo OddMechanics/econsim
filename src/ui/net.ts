@@ -1092,7 +1092,7 @@ export class Net {
     const p = g.policy;
     return `<div class="nw-site gov" style="--brand:${hsl(g.hue, 45, 35)};--brand-soft:${hsl(g.hue, 40, 95)};--brand-deep:${hsl(g.hue, 45, 22)}">
       <header class="nw-head gov-head"><span class="nw-logo"><span>★</span>${esc(g.name)}</span><span class="nw-tagline">${esc(g.label)} · official website</span></header><div class="nw-one">
-      <p>Treasury ${treasury(ctx, g).toFixed(0)} · property tax ${(p.propertyTax * 100).toFixed(1)}%/yr · income tax ${(p.incomeTax * 100).toFixed(1)}% · sales tax ${(p.salesTax * 100).toFixed(1)}% · welfare ${p.welfare}/day${p.minWage ? ` · minimum wage ${p.minWage}` : ''}${p.rentCap ? ` · rent cap ${p.rentCap}` : ''}${p.maxFloors ? ` · height limit ${p.maxFloors} floors` : ''}</p>
+      <p>Treasury ${treasury(ctx, g).toFixed(0)} · property tax ${(p.propertyTax * 100).toFixed(1)}%/yr · income tax ${(p.incomeTax * 100).toFixed(1)}% · sales tax ${(p.salesTax * 100).toFixed(1)}% · welfare ${p.welfare}/day · healthcare ${p.healthcare === 'public' ? 'free' : p.healthcare === 'private' ? 'private' : 'half paid by the city'}${p.minWage ? ` · minimum wage ${p.minWage}` : ''}${p.rentCap ? ` · rent cap ${p.rentCap}` : ''}${p.maxFloors ? ` · height limit ${p.maxFloors} floors` : ''}</p>
       ${e ? `<h3>${e.kind === 'referendum' ? `Referendum: ${esc(e.motion?.title ?? '')}` : `Election on ${formatTime(e.day)}`}</h3>${cands ? `<table><tr><th>Candidate</th><th>For</th><th>Party</th><th>Slogan</th></tr>${cands}</table>` : ''}` : ''}
       <h3>Officials</h3><table>${off || '<tr><td>No one in office.</td></tr>'}</table>
       <h3>Recent decisions</h3>${laws || '<p class="nw-sub">None yet.</p>'}

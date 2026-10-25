@@ -12,12 +12,13 @@
 
 import { MINUTES_PER_DAY, POLITICS } from './config';
 import { dayStart, log, newId, type Ctx } from './ctx';
-import { compass, distance, stance } from './ideology';
+import { ageOf, compass, distance, stance } from './ideology';
 import { createBuilding, findLot } from './buildings';
 import { startConstruction } from './construction';
 import { averageRent } from './housing';
 import { openAuction } from './estate';
 import { crimeRate } from './crime';
+import { buildPublicHospital, hasHospital } from './health';
 import {
   adminOf, buildCityHall, cellCenter, cellOf, councilSeats, govSite, layOutStreets, pavingCandidates, polityAt, polityOf, rebuildOffices,
   referenceWage, residentsOf, systemLabel, treasury,
@@ -70,6 +71,15 @@ export function support(ctx: Ctx, p: Person, g: Polity, m: Motion): number {
     case 'annex': return stance(ctx, p, 'growth') * 0.6 + 0.15;
     case 'amend': return amendSupport(ctx, p, g, m);
     case 'housing': return stance(ctx, p, 'housing') * 0.8 - 0.1;
+    case 'health': {
+      // more public money for care: the welfare-minded, the ill, the poor and health workers like it; taxpayers less so
+      const rank = { private: 0, subsidized: 1, public: 2 } as const;
+      const dir = rank[String(m.value) as keyof typeof rank] - rank[g.policy.healthcare ?? 'subsidized'];
+      const role = ctx.cById.get(p.job)?.role;
+      const care = (p.ill ? 0.35 : 0) + (p.money < referenceWage(ctx) * 5 ? 0.2 : 0) + (role === 'doctor' || role === 'nurse' ? 0.2 : 0);
+      return (stance(ctx, p, 'welfare') * 0.8 - 0.25 * Math.max(0, stance(ctx, p, 'taxes')) + care) * Math.sign(dir);
+    }
+    case 'hospital': return 0.15 + 0.4 * stance(ctx, p, 'welfare') - 0.1 * compass(p).econ + (p.ill || ageOf(ctx, p) > 60 ? 0.3 : 0) - (m.cost ?? 0) / Math.max(500, treasury(ctx, g)) * 0.4;
   }
   return 0;
 }
@@ -223,6 +233,13 @@ function ideas(ctx: Ctx, g: Polity, p: Person): Motion[] {
   // height limits protect the neighborhoods; downtown is where towers go (like most real cities' zoning)
   if (tall && pol.maxFloors <= 0 && stance(ctx, p, 'growth') < -0.25) out.push({ kind: 'height', title: 'Limit buildings outside downtown to 6 floors', by, value: 6 });
   if (pol.maxFloors > 0 && stance(ctx, p, 'growth') > 0.25) out.push({ kind: 'height', title: 'Lift the height limit in the neighborhoods', by, value: 0 });
+  // healthcare: who pays the doctor, and a public hospital once the city is big enough
+  const care = pol.healthcare ?? 'subsidized';
+  const sick = residentsOf(ctx, g).filter((q) => q.ill && q.ill.kind !== 'cold').length / Math.max(1, pop);
+  if (care !== 'public' && stance(ctx, p, 'welfare') > 0.45 && econ < -0.3) out.push({ kind: 'health', title: 'Make healthcare free, paid by the city', by, value: 'public' });
+  else if (care === 'private' && (econ < 0.2 || sick > 0.06)) out.push({ kind: 'health', title: "Pay half of everyone's doctor and hospital bills", by, value: 'subsidized' });
+  if (care !== 'private' && econ > 0.5 && (reserveDays < 10 || econ > 0.8)) out.push({ kind: 'health', title: care === 'public' ? 'End free healthcare (patients pay half)' : "Stop paying people's doctor bills", by, value: care === 'public' ? 'subsidized' : 'private' });
+  if (care !== 'private' && pop >= 400 && cash > 2500 && !hasHospital(ctx, g)) out.push({ kind: 'hospital', title: 'Build a public hospital', by, cost: 2500 });
   if (pol.minWage < ref * 0.7 && econ < -0.5 && pop > 40) out.push({ kind: 'minwage', title: `Set a minimum wage of ${(ref * 0.75).toFixed(0)} a shift`, by, value: Math.round(ref * 0.75) });
   if (pol.minWage > 0 && econ > 0.6) out.push({ kind: 'minwage', title: 'Abolish the minimum wage', by, value: 0 });
   if (econ < -0.7 && pol.landPrice > 0.4) out.push({ kind: 'landprice', title: 'Sell public land cheaply to homesteaders', by, value: 0.3 });
@@ -368,6 +385,8 @@ export function enact(ctx: Ctx, g: Polity, m: Motion): void {
       break;
     }
     case 'amend': setCharter(ctx, g, m); break;
+    case 'health': pol.healthcare = v as typeof pol.healthcare; break;
+    case 'hospital': buildPublicHospital(ctx, g); break;
   }
 }
 

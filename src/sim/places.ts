@@ -22,7 +22,7 @@ import { tally } from './stats';
 import type { AdChannel, Building, Firm, KnownPlace, Person, PlaceKind, PlaceSource } from './types';
 
 /** How many places of each kind a person keeps in mind. */
-export const PLACE_CAP: Record<PlaceKind, number> = { shop: 8, food: 6, car: 2, job: 12, home: 8, out: 4 };
+export const PLACE_CAP: Record<PlaceKind, number> = { shop: 8, food: 6, car: 2, job: 12, home: 8, out: 4, care: 3 };
 /** How many results a search shows. */
 export const SEARCH_RESULTS = 5;
 /** Days without anything bringing a place back to mind before it's forgotten. */
@@ -38,6 +38,7 @@ export function placeKinds(b: Building): PlaceKind[] {
   if (b.kind === 'store') out.push('shop');
   else if (b.kind === 'restaurant') out.push('food');
   else if (b.kind === 'dealer') out.push('car');
+  else if (b.kind === 'clinic' || b.kind === 'hospital') out.push('care');
   if (BUILDINGS[b.kind].jobs.length) out.push('job');
   return out;
 }
@@ -167,7 +168,7 @@ const forRent = (b: Building) => b.units.some((u) => u.tenant < 0);
 
 /** The nearest few places of each kind around a point that someone would notice, learned with a source. */
 function notice(ctx: Ctx, p: Person, x: number, y: number, r: number, src: PlaceSource, per: Partial<Record<PlaceKind, number>>): void {
-  const found: Record<PlaceKind, { b: Building; d: number }[]> = { shop: [], food: [], car: [], job: [], home: [], out: [] };
+  const found: Record<PlaceKind, { b: Building; d: number }[]> = { shop: [], food: [], car: [], job: [], home: [], out: [], care: [] };
   const hiring = hiringSites(ctx);
   for (const b of around(ctx, x, y, r)) {
     for (const k of placeKinds(b)) {
@@ -197,7 +198,7 @@ export function placesDaily(ctx: Ctx, p: Person): void {
   const home = ctx.bById.get(p.home);
   const job = ctx.bById.get(ctx.cById.get(p.job)?.site ?? -1);
   const base = home ?? { x: p.x, y: p.y };
-  notice(ctx, p, base.x, base.y, 420, 'near', { shop: 4, food: 3, car: 1, out: 2, home: 3, job: 4 });
+  notice(ctx, p, base.x, base.y, 420, 'near', { shop: 4, food: 3, car: 1, out: 2, home: 3, job: 4, care: 1 });
   if (job) {
     notice(ctx, p, job.x, job.y, 250, 'near', { shop: 2, food: 2, home: 2, job: 3 });
     // on the way: every ~150 m along the commute, what's right by the street
@@ -233,7 +234,7 @@ export function countryPlaces(ctx: Ctx, p: Person): void {
   } else p.places = [];
   const home = ctx.bById.get(p.home);
   const base = home ?? { x: p.x, y: p.y };
-  notice(ctx, p, base.x, base.y, 1500, 'near', { shop: 2, food: 1, out: 1, job: 3 });
+  notice(ctx, p, base.x, base.y, 1500, 'near', { shop: 2, food: 1, out: 1, job: 3, care: 1 });
   const job = ctx.bById.get(ctx.cById.get(p.job)?.site ?? -1);
   if (job) learnPlace(ctx, p, job, 'job', 'visit').seen = now;
   for (const fid of p.firms) {
@@ -308,7 +309,7 @@ export function searchFor(ctx: Ctx, p: Person, k: PlaceKind, site: Firm, cands: 
 
 // ------------------------------------------------------------ word of mouth
 
-const KIND_WORD: Record<PlaceKind, string> = { shop: 'shop', food: 'place to eat', car: 'car dealer', job: 'place to work', home: 'building', out: 'spot' };
+const KIND_WORD: Record<PlaceKind, string> = { shop: 'shop', food: 'place to eat', car: 'car dealer', job: 'place to work', home: 'building', out: 'spot', care: 'doctor' };
 
 /**
  * In a conversation, `a` tells `b` about a place: one they liked or hated,

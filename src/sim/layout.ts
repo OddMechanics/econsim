@@ -225,6 +225,36 @@ function generate(kind: BuildingKind, w: number, d: number, floors: number, seed
       }
       break;
     }
+    case 'clinic': {
+      // reception (nurses) by the door, waiting chairs, consulting rooms (doctors' desks, an examination bed each) at the back
+      for (let i = 0; i < staff('nurse'); i++) out.push({ lx: -iw / 2 + 2 + i * 2.4, lz: id / 2 - 2, floor: 0, kind: 'counter', facing: 0, role: 'nurse' });
+      grid(6, 0, 'seat', undefined, 0, iw / 2 - 1, 0, id / 2 - 1.5, Math.PI);
+      for (let i = 0; i < staff('doctor'); i++) {
+        const x = -iw / 2 + 2.5 + i * Math.max(3, (iw - 5) / Math.max(1, staff('doctor')));
+        out.push({ lx: x, lz: -id / 2 + 1.5, floor: 0, kind: 'desk', facing: 0, role: 'doctor' });
+        out.push({ lx: x + 1.4, lz: -id / 2 + 3.4, floor: 0, kind: 'bed', facing: 0 });
+      }
+      break;
+    }
+    case 'hospital': {
+      // ground floor: the emergency room and reception, waiting chairs; upper floors: wards of beds, a nurses' station and a doctor each
+      const nurses = staff('nurse'), doctors = staff('doctor');
+      for (let i = 0; i < Math.min(2, nurses); i++) out.push({ lx: -3 + i * 2.4, lz: id / 2 - 2.5, floor: 0, kind: 'counter', facing: 0, role: 'nurse' });
+      grid(10, 0, 'seat', undefined, 2, iw / 2 - 1.5, 0, id / 2 - 2, Math.PI);
+      grid(4, 0, 'bed', undefined, -iw / 2 + 2, -2, -id / 2 + 2, 0, 0);
+      out.push({ lx: -iw / 2 + 3, lz: 2, floor: 0, kind: 'desk', facing: 0, role: 'doctor' });
+      let n = Math.min(2, nurses), dr = 1;
+      for (let f = 1; f < floors; f++) {
+        for (let k = 0; k < 2 && n < nurses; k++, n++) out.push({ lx: -1.2 + k * 2.4, lz: 0, floor: f, kind: 'counter', facing: 0, role: 'nurse' });
+        if (dr < doctors) { out.push({ lx: 2.5, lz: 1.5, floor: f, kind: 'desk', facing: Math.PI, role: 'doctor' }); dr++; }
+        // two rows of beds along the outer walls
+        grid(8, f, 'bed', undefined, -iw / 2 + 1.5, iw / 2 - 1.5, -id / 2 + 1.5, -id / 2 + 4, 0);
+        grid(8, f, 'bed', undefined, -iw / 2 + 1.5, iw / 2 - 1.5, id / 2 - 4, id / 2 - 1.5, Math.PI);
+      }
+      while (n < nurses) { out.push({ lx: -3 + (n % 4) * 2, lz: id / 2 - 4.5, floor: 0, kind: 'counter', facing: 0, role: 'nurse' }); n++; }
+      while (dr < doctors) { out.push({ lx: -iw / 2 + 3 + dr * 2, lz: 4, floor: 0, kind: 'desk', facing: 0, role: 'doctor' }); dr++; }
+      break;
+    }
     case 'depot':
       for (let i = 0; i < Math.max(2, staff('driver')); i++) out.push({ lx: -iw / 2 + 3 + i * 4, lz: d / 2 + 2, floor: 0, kind: 'bay', facing: Math.PI, role: 'driver', outside: true });
       break;

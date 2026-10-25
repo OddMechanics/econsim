@@ -47,6 +47,8 @@ export function redevelopPrice(ctx: Ctx, lot: Lot): number | null {
   const b = ctx.bById.get(lot.building);
   if (!b || b.ruined || !b.built || b.host !== undefined || b.hosted?.length || ctx.govOfFirm.has(b.owner)) return null;
   if (b.kind === 'cityhall' || b.kind === 'park' || b.kind === 'plaza' || b.kind === 'tower' || b.kind === 'officetower') return null;
+  // nobody tears down a building that's only just gone up (a new business's losses are its start-up costs)
+  if (ctx.s.tick - b.created < 60 * MINUTES_PER_DAY) return null;
   const tenants = b.units.filter((u) => u.tenant >= 0).length;
   const ok = b.kind === 'house' || b.kind === 'trailer'
     || (b.kind === 'apartments' && b.floors <= 4 && tenants <= b.units.length * 0.3)

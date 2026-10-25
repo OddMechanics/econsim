@@ -166,7 +166,7 @@ export interface Looks {
 }
 
 /** What a place is to someone: somewhere to shop, eat, buy a car, work, live, or go out. */
-export type PlaceKind = 'shop' | 'food' | 'car' | 'job' | 'home' | 'out';
+export type PlaceKind = 'shop' | 'food' | 'car' | 'job' | 'home' | 'out' | 'care';
 /** How they came to know it. */
 export type PlaceSource = 'near' | 'route' | 'visit' | 'friend' | 'ad' | 'search' | 'asked';
 
@@ -202,6 +202,7 @@ export type Role =
   | 'driver' | 'builder' | 'clerk' | 'manager'
   | 'presenter' | 'journalist' | 'programmer' // media and internet
   | 'sales' // sales reps and ad sales (they find customers for the company)
+  | 'doctor' | 'nurse' // healthcare
   | 'official' | 'civil' | 'officer'; // government: officials, civil servants, police
 
 /** What the body is doing, for animation. */
@@ -233,6 +234,12 @@ export type Step =
   | { k: 'soup'; polity: number } // a free meal at the city's soup kitchen (city hall), paid from the welfare budget
   | { k: 'claim' } // file a welfare claim (in person, at city hall)
   | { k: 'eatOut'; restaurant: number }
+  /** See a doctor at a clinic or a hospital's emergency room: wait, be seen, pay. */
+  | { k: 'clinic'; bid: number }
+  /** Admitted to a hospital: in a ward bed until well enough to go home. */
+  | { k: 'hospital'; bid: number }
+  /** Taken by ambulance to the regional hospital outside the city (no hospital here, or no free bed); back when well. */
+  | { k: 'away' }
   | { k: 'deliver'; bid: number } // drop carried materials at a site / business
   | { k: 'pickup'; bid: number; good: Good; qty: number }
   | { k: 'store' } // put carried goods in the pantry at home
@@ -330,6 +337,8 @@ export interface Person {
   knownHomes: number; // tick they last saw housing listings
   /** The places they know of: shops, restaurants, employers, flats, parks (see places.ts). */
   places?: KnownPlace[];
+  /** An illness or injury they have right now (see health.ts). */
+  ill?: Illness;
   /** What they've eaten lately (food -> recent portions, fading daily): variety makes meals more enjoyable. */
   ate?: Partial<Record<Good, number>>;
   rel: Record<number, Relation>;
@@ -411,6 +420,20 @@ export interface Politics {
   neg?: Record<number, number>;
 }
 
+/** Colds and flu (catching), injuries, serious illness (needs a hospital), long-term conditions (need check-ups). */
+export type IllKind = 'cold' | 'flu' | 'injury' | 'serious' | 'chronic';
+
+export interface Illness {
+  kind: IllKind;
+  /** 0..1: how bad it is (it heals down to 0; serious illness gets worse without care). */
+  sev: number;
+  since: number;
+  /** Tick a doctor last saw them for it. */
+  seen?: number;
+  /** The hospital they're admitted to (building id; GATE = the regional hospital outside the city). */
+  admitted?: number;
+}
+
 export interface Brain {
   w1: number[]; // inputs x hidden
   b1: number[];
@@ -435,6 +458,8 @@ export type BuildingKind =
   | 'sawmill' | 'brickworks' | 'steelmill' | 'cementworks' | 'glassworks' | 'foodplant'
   | 'workshop' | 'furniture' | 'textile' | 'electronics' | 'carplant'
   | 'store' | 'dealer' | 'restaurant' | 'office' | 'depot' | 'yard' | 'bank'
+  | 'clinic' // a doctors' practice: check-ups, colds, small injuries
+  | 'hospital' // wards with beds, surgery and an emergency room (public or private)
   | 'adco' // outdoor advertising company: owns billboards, screens and ad columns and rents them out
   | 'cityhall' // seat of a government
   | 'studio' // TV station
@@ -522,7 +547,7 @@ export interface Firm {
   cash: number;
   kind: BuildingKind; // its main line of business
   sites: number[]; // building ids it operates
-  prices: Partial<Record<Good | 'meal' | 'freight' | 'build' | 'rate', number>>;
+  prices: Partial<Record<Good | 'meal' | 'freight' | 'build' | 'rate' | 'visit' | 'bed', number>>;
   wages: Partial<Record<Role, number>>; // offered wage per shift for new hires
   ledger: Ledger;
   /** Sales in its last full business day (for statistics). */
@@ -786,6 +811,8 @@ export interface Policy {
   nationalizeAbove: number; // staff; firms this big become public (0 = never)
   immigration: 'open' | 'limited' | 'closed';
   publicHousing: boolean;
+  /** Who pays doctors and hospitals: the patient, half each, or the city (free at the point of care). */
+  healthcare?: 'private' | 'subsidized' | 'public';
 }
 
 export interface Office {
@@ -1047,7 +1074,7 @@ export interface Market {
 
 export interface LogEntry {
   t: number;
-  kind: 'build' | 'business' | 'death' | 'arrival' | 'job' | 'market' | 'event' | 'home' | 'buy' | 'politics' | 'media' | 'law';
+  kind: 'build' | 'business' | 'death' | 'arrival' | 'job' | 'market' | 'event' | 'home' | 'buy' | 'politics' | 'media' | 'law' | 'health';
   text: string;
   who?: number;
   bid?: number;
@@ -1138,6 +1165,9 @@ export interface DailyStat {
   pop: number;
   /** Of them, living out in the countryside. */
   rural?: number;
+  /** Ill or injured at the end of the day, and of them in a hospital bed. */
+  sick?: number;
+  patients?: number;
   arrivals: number; // during the day
   left: number;
   deaths: number;

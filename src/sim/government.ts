@@ -180,7 +180,7 @@ export function defaultCharter(): Charter {
 export function defaultPolicy(): Policy {
   return {
     propertyTax: 0.01, salesTax: 0.02, incomeTax: 0.03, welfare: 3, police: 1, roadCrew: 3, clerks: 1,
-    rentCap: 0, maxFloors: 0, minWage: 0, landPrice: 1, priceCaps: false, nationalizeAbove: 0, immigration: 'open', publicHousing: false,
+    rentCap: 0, maxFloors: 0, minWage: 0, landPrice: 1, priceCaps: false, nationalizeAbove: 0, immigration: 'open', publicHousing: false, healthcare: 'subsidized',
   };
 }
 

@@ -104,10 +104,12 @@ export function redistrict(ctx: Ctx, g: Polity, drawer?: Person): void {
       // compactness: small spread of cells around each district's center
       score = -parts.reduce((s, d) => s + spread(d), 0);
     }
+    if (parts.some((d) => !d.length) || !Number.isFinite(score)) continue;
     if (score > bestScore) { bestScore = score; best = parts; }
   }
+  if (!best) { g.districts = []; return; }
   // empty cells go to the nearest district
-  const out = best!.map((d) => d.slice());
+  const out = best.map((d) => d.slice());
   const centers = out.map((d) => { const pts = d.map(cellCenter); return [pts.reduce((s, q) => s + q[0], 0) / pts.length, pts.reduce((s, q) => s + q[1], 0) / pts.length]; });
   for (const c of g.cells) {
     if ((pop.get(c) ?? 0) > 0) continue;

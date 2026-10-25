@@ -6,6 +6,7 @@
 
 import { cityPop, dayOf, dayStart, formatTime, minuteOfDay, nameOf } from '../sim/ctx';
 import { isRural } from '../sim/countryside';
+import { ILLNESS } from '../sim/health';
 import { MINUTES_PER_DAY, OUTSIDE } from '../sim/config';
 import { BUILDINGS, comfortOf, GOOD, invWeight, RETAIL_GOODS, ROLE, slotsFor, TOWERS } from '../sim/goods';
 import { deliveredFraction, hostedOf } from '../sim/buildings';
@@ -869,6 +870,7 @@ export class UI {
           <span class="k">Arrived</span><span>${shortTime(p.arrived)}</span>
         </div>
         <h3>Needs</h3>
+        ${p.ill ? `<div class="small">🤒 ${esc(this.illText(p))}</div>` : ''}
         ${this.meter('Food', p.needs.food, needColor(p.needs.food))}${this.meter('Energy', p.needs.energy, needColor(p.needs.energy))}
         ${this.meter('Health', p.needs.health, needColor(p.needs.health))}${this.meter('Social', p.needs.social, needColor(p.needs.social))}
         ${this.meter('Fun', p.needs.fun, needColor(p.needs.fun))}${this.meter('Mood', p.mood * 100)}
@@ -924,6 +926,15 @@ export class UI {
   }
 
   /** What their tiny neural network has learned: how much better than usual each kind of activity tends to be for them right now. */
+  /** What's wrong with them and what's being done about it. */
+  private illText(p: Person): string {
+    const ill = p.ill!, ctx = this.sim.ctx;
+    const how = ill.sev > 0.7 ? 'badly' : ill.sev > 0.4 ? 'moderately' : 'mildly';
+    const where = ill.admitted !== undefined ? `, in hospital at ${ctx.fById.get(ctx.bById.get(ill.admitted)?.firm ?? -1)?.name ?? 'the hospital'}` : '';
+    const seen = ill.seen !== undefined ? `, saw a doctor ${shortTime(ill.seen)}` : ill.kind === 'cold' ? '' : ', not seen by a doctor';
+    return `${ILLNESS[ill.kind].label.replace(/^a /, 'A ').replace(/^the /, 'The ').replace(/^an /, 'An ')} (${how})${where}${seen}`;
+  }
+
   private brainHtml(p: Person): string {
     if (!p.brain) return '';
     const out = predict(p.brain, features(this.sim.ctx, p)).out;

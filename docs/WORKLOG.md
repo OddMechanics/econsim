@@ -312,3 +312,9 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
   places.ts countryPlaces; sim.ts stride ×3 for rural, cap on city pop; ctx.ts cityPop used for city-size formulas; farmhouse kind;
   render: terrain buildOuter rings on heightAt to the map edge + field colors (renderer countryFields). Checks: 30 days seeds 4/11
   0 deaths; old 4,257-person save loads (countryside laid out in 66 ms).
+- Health (stage D): health.ts (ILLNESS/HEALTH, healthDaily onset/course/contagion/immunity, bills, clinicMinute,
+  hospitalMinute, awayMinute = ambulance to the regional hospital, public hospital), types Illness/Person.ill/Policy.healthcare/
+  steps clinic|hospital|away/PlaceKind care, clinic + hospital kinds and doctor/nurse roles (layout stations), ai.ts healthOptions
+  (+ call in sick), firms staffing/prices/chains (CityCare, Mercy Health; doctors brought in), newcomers can be doctors/nurses,
+  council motions health/hospital, founding charter sets healthcare, stats sick/patients + Health chart, person panel illness.
+  Fixed maxFloorsAt cell lookup and a redistrict crash.

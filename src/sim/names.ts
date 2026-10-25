@@ -18,6 +18,14 @@ export function randomName(rng: Rng): string {
 
 const NOUN: Partial<Record<BuildingKind, string[]>> = {
   farm: ['Farms', 'Acres', 'Harvest', 'Fields'],
+  vegfarm: ['Produce', 'Market Garden', 'Greens', 'Orchards'],
+  dairyfarm: ['Dairy Farm', 'Meadows', 'Pastures'],
+  ranch: ['Ranch', 'Livestock', 'Cattle Co.'],
+  bakery: ['Bakery', 'Bread Co.', 'Ovens'],
+  dairyplant: ['Dairy', 'Creamery', 'Milk Co.'],
+  meatplant: ['Meats', 'Butchers', 'Packing Co.'],
+  clinic: ['Medical', 'Family Practice', 'Health Clinic', 'Medical Center'],
+  hospital: ['Hospital', 'Medical Center'],
   lumberyard: ['Timber', 'Logging', 'Forestry'],
   quarry: ['Quarry', 'Aggregates', 'Stone & Sand'],
   claypit: ['Clay', 'Clay Works', 'Earthworks'],

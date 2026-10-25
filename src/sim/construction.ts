@@ -114,8 +114,9 @@ export const WAITING = -2;
 
 /**
  * Daily: sites waiting for a contractor ask again. A project that can't get
- * going (usually because the owner can't raise the deposit) is scaled down,
- * and eventually given up: the half-planned site is cleared and the lot sold.
+ * going is scaled down, and eventually given up: after 12 days if the owner
+ * can't raise the deposit, after 45 if the builders are just busy. The
+ * half-planned site is cleared and the lot sold.
  */
 export function contractorsDaily(ctx: Ctx): void {
   for (const b of ctx.s.buildings.slice()) {
@@ -133,7 +134,8 @@ export function contractorsDaily(ctx: Ctx): void {
       b.created = ctx.s.tick;
       b.ver++;
       log(ctx, 'build', `${nameOf(ctx, b.owner)} scaled their ${BUILDINGS[b.kind].label.toLowerCase()} down to ${floors} floor${floors > 1 ? 's' : ''} to get it built.`, { bid: b.id });
-    } else if (waited > 12 && b.workDone === 0) {
+    } else if (waited > 12 && b.workDone === 0 && (waited > 45 || !yardFirms(ctx).some((y) => cashOf(ctx, b.owner) >= quote(ctx, y, b) * 0.4))) {
+      // (a client who can pay the deposit waits its turn while the builders are busy; one who can't gives up sooner)
       log(ctx, 'build', `${nameOf(ctx, b.owner)} gave up on building a ${BUILDINGS[b.kind].label.toLowerCase()}; the lot is for sale.`, { bid: b.id });
       cancelHooks.cancel(ctx, b);
     }

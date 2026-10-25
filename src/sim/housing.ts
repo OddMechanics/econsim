@@ -7,7 +7,7 @@ import { HOUSING } from './config';
 import { addCash, cashOf, log, nameOf, principalOf, type Ctx } from './ctx';
 import { polityAt } from './government';
 import { sellBuilding } from './estate';
-import { BUILDINGS, comfortOf } from './goods';
+import { BUILDINGS, comfortOf, EDIBLE } from './goods';
 import { onFinished } from './hooks';
 import type { Building, BuildingKind, Person } from './types';
 import { tally } from './stats';
@@ -88,6 +88,8 @@ export function moveOut(ctx: Ctx, p: Person): void {
   // a trailer or house they own and leave stays theirs (they may sell it later)
   p.home = -1;
   p.unit = -1;
+  // they take the food from their kitchen with them
+  for (const g of EDIBLE) { p.inv[g] += p.pantry[g]; p.pantry[g] = 0; }
 }
 
 export function moveIn(ctx: Ctx, p: Person, b: Building, unit: number): void {

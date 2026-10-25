@@ -362,6 +362,9 @@ export function foundingCharter(ctx: Ctx, founders: Person[]): { charter: Charte
   policy.landPrice = E < -0.5 ? 0.4 : E > 0.5 ? 1.2 : 0.8;
   if (housing > 0.4) policy.rentCap = 0; // decided later, once there are rents
   votes.push(`property tax ${(policy.propertyTax * 100).toFixed(1)}%/yr, income tax ${(policy.incomeTax * 100).toFixed(1)}%, sales tax ${(policy.salesTax * 100).toFixed(1)}%, welfare ${policy.welfare}/day`);
+  // who pays the doctor: the founders' views on welfare and the economy
+  policy.healthcare = welfare > 0.35 && E < -0.2 ? 'public' : welfare < -0.25 || E > 0.45 ? 'private' : 'subsidized';
+  votes.push(policy.healthcare === 'public' ? 'free healthcare, paid by the city' : policy.healthcare === 'subsidized' ? 'the city pays half of doctor and hospital bills' : 'patients pay for their own healthcare');
   return { charter, policy, votes };
 }
 

@@ -299,6 +299,8 @@ export function recordDaily(ctx: Ctx): void {
     day: today - 1, t: s.tick, // the day that just ended
     pop: s.people.length,
     rural: s.people.length - cityPop(ctx),
+    sick: s.people.filter((p) => p.ill).length,
+    patients: s.people.filter((p) => p.ill?.admitted !== undefined && p.inside === p.ill.admitted).length,
     arrivals: flows.arrivals, left: flows.emigrated, deaths: flows.deaths,
     employed, owners, jobless, homeless, renters, homeowners, trailers, online,
     cars: s.vehicles.filter((v) => v.kind === 'car').length,

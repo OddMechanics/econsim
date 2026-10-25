@@ -50,4 +50,6 @@ function upgrade(s: SimState): void {
     s.data = { ...(s.data ?? {}), mapCells: 1 };
   }
   s.world.seed ??= s.seed;
+  // healthcare came later: cities from before pay half of their people's bills
+  for (const g of s.polities) g.policy.healthcare ??= 'subsidized';
 }

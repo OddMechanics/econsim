@@ -142,6 +142,13 @@ function stationWork(ctx: Ctx, p: Person, site: Building, f: Firm | undefined, r
       p.activity = role === 'manager' ? 'managing (at the computer)' : role === 'civil' ? 'processing paperwork at city hall'
         : role === 'journalist' ? 'writing a story' : role === 'programmer' ? `coding ${f?.site?.name ?? 'software'}` : 'working at a computer';
       return;
+    case 'doctor':
+    case 'nurse': {
+      const patients = peopleInside(ctx, site.id).filter((q) => q.ill).length;
+      p.pose = patients ? (role === 'doctor' ? 'talk' : 'stand') : 'type';
+      p.activity = patients ? (role === 'doctor' ? 'seeing patients' : 'looking after patients') : 'catching up on patient notes';
+      return;
+    }
     case 'presenter': {
       const live = f?.channel && f.channel.onAir >= 0;
       p.pose = live ? 'talk' : 'sit';

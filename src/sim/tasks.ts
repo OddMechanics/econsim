@@ -21,7 +21,8 @@ import { browseMinute, postOnline, watchMinute } from './media';
 import { flyerAt } from './advertising';
 import { castBallot } from './elections';
 import { canvassMinute, speakMinute } from './civic';
-import { bookSpend, collectSalesTax, referenceWage } from './government';
+import { awayMinute, clinicMinute, hospitalMinute } from './health';
+import { bookSpend, cellOf, collectSalesTax, referenceWage } from './government';
 import { noteOfficeWanted, redevelop } from './development';
 import { endRide, gigMinute, hailRide, isRide, launchCrowdfund, placeOrder } from './online';
 import { BUILDINGS as DEFS } from './goods';
@@ -48,6 +49,7 @@ export function steadyStep(ctx: Ctx, p: Person): boolean {
   // scrolling, watching TV, sitting in an audience: nothing changes minute to minute
   if (st.k === 'browse' || st.k === 'phone' || st.k === 'watch') return t.elapsed > 2;
   if (st.k === 'attend') return t.elapsed > 0;
+  if (st.k === 'hospital' || st.k === 'away') return t.elapsed > 1;
   if (st.k === 'work' || st.k === 'ownWork') {
     if (!t.mem?.seated || (t.mem.phase ?? 0) > 0) return false;
     const c = st.k === 'work' ? ctx.cById.get(st.contract) : undefined;
@@ -508,6 +510,12 @@ function execute(ctx: Ctx, p: Person, step: Step): StepResult {
       return shopMinute(ctx, p, step);
     case 'eatOut':
       return eatOutMinute(ctx, p, step);
+    case 'clinic':
+      return clinicMinute(ctx, p, step);
+    case 'hospital':
+      return hospitalMinute(ctx, p, step);
+    case 'away':
+      return awayMinute(ctx, p);
     case 'deliver': {
       const b = ctx.bById.get(step.bid);
       if (!b) return 'instant';
@@ -842,7 +850,7 @@ export function maxFloorsAt(ctx: Ctx, x: number, y: number): number {
   if (zoneAt(ctx, x, y) === 'core') return 0;
   for (const g of ctx.s.polities) {
     if (g.status === 'gone' || g.policy.maxFloors <= 0) continue;
-    if (g.cells.length && g.cells.includes(Math.floor(y / 50) * 40 + Math.floor(x / 50))) return g.policy.maxFloors;
+    if (g.cells.length && g.cells.includes(cellOf(x, y))) return g.policy.maxFloors;
   }
   return 0;
 }

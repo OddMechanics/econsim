@@ -181,6 +181,8 @@ export class StatsView {
       { el: insights, update: () => this.fillInsights(list) },
       this.chart('People and jobs', 'Everyone living in the city and the countryside around it, how many have a job, and how many have neither a job nor a business.', (d) => [
         this.s('Population', slot(0), d, (x) => x.pop), this.s('Employed', slot(1), d, (x) => x.employed), this.s('Out of work', slot(2), d, (x) => x.jobless)]),
+      this.chart('Health', 'People ill or injured at the end of each day, and of them those in a hospital bed.', (d) => [
+        this.s('Ill or injured', slot(0), d, (x) => x.sick ?? 0), this.s('In hospital', slot(1), d, (x) => x.patients ?? 0)]),
       this.chart('City and countryside', 'Where people live: in the city, or out in the farm country and its villages (whose people live a simpler life).', (d) => [
         this.s('City', slot(0), d, (x) => x.pop - (x.rural ?? 0)), this.s('Countryside', slot(3), d, (x) => x.rural ?? 0)], { kind: 'stacked' }),
       this.chart('Where people\'s money goes each day', 'Spending in shops, at restaurants and on rent. Stacked: the top edge is the total.', (d) => this.spendSeries(d), { kind: 'stacked' }),

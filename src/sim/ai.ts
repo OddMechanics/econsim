@@ -12,7 +12,7 @@
 
 import { MINUTES_PER_DAY, MOVE, ONLINE, OUTSIDE } from './config';
 import { serviceDemand, serviceRate } from './production';
-import { cityPop, dayOf, dayStart, hourOf, type Ctx } from './ctx';
+import { cashOf, cityPop, dayOf, dayStart, hourOf, type Ctx } from './ctx';
 import { BUILDINGS, BUSINESS_KINDS, comfortOf, EDIBLE, foodIn, GOOD, ROLE } from './goods';
 import { deliveredFraction } from './buildings';
 import { buildCost, sitesOf } from './firms';
@@ -32,6 +32,7 @@ import { askingRent, vacantUnits } from './leases';
 import { planDevelopment } from './development';
 import { gigOutlook, isOnline, onlineStores, outsideRetailPrice, pendingDeliveries, siteOf } from './online';
 import { govSite, mainPolity, polityOf, referenceWage } from './government';
+import { ILLNESS, nearestCare, nearestHospital, tooSickToWork, visitCost } from './health';
 import { askAround, ensurePlaces, knownOf, learnPlace, searchFor } from './places';
 import { GOODS, type Building, type Crowdfund, type DecisionOption, type Firm, type Good, type Person, type Role, type Step } from './types';
 
@@ -132,7 +133,8 @@ function makeView(ctx: Ctx, p: Person): View {
     mv: (0.6 + 0.8 * t.ambition) * Math.pow(80 / (80 + Math.max(0, p.money) + 0.5 * invValue), 0.5 - 0.25 * t.ambition),
     effort: 0.35 * (1.25 - t.diligence) * (1 + 0.8 * fatigue),
     fatigue,
-    foodStock: edibleCount(p.inv) + edibleCount(p.pantry) + coming,
+    // (the pantry only counts with a home to keep it in)
+    foodStock: edibleCount(p.inv) + (p.home >= 0 ? edibleCount(p.pantry) : 0) + coming,
     foodTarget: 4 + 6 * t.patience,
     foodUnit: 1.6 * (1 + 3 * hungerUrgency),
     home: ctx.bById.get(p.home),
@@ -201,6 +203,8 @@ function workOption(v: View): Option | null {
   if (!c) return null;
   const site = ctx.bById.get(c.site);
   if (!site || !site.built || site.ruined) return null;
+  // too ill to work: they call in sick
+  if (tooSickToWork(p)) return null;
   const [start, end] = BUILDINGS[site.kind].hours;
   const day = dayOf(ctx.s.tick);
   const travel = bHours(p, site);
@@ -217,7 +221,8 @@ function workOption(v: View): Option | null {
 /**
  * Owners keep their own sites running when nobody else does: worth more the
  * less money they have (a struggling founder pitches in; a rich owner hires
- * someone and, at most, drops by to look after the business).
+ * someone for manual work and, at most, drops by to look after the business,
+ * though a doctor still sees patients at their own practice).
  */
 function ownWorkOptions(v: View): Option[] {
   const { ctx, p } = v;
@@ -239,7 +244,8 @@ function ownWorkOptions(v: View): Option[] {
       const r = def.recipe;
       if (r && Object.entries(r.inputs).some(([g, q]) => b.store[g as Good] < q! * 2) && f.cash < 5) continue;
       const until = Math.min(ctx.s.tick + 240, dayStart(ctx.s.tick) + end * 60);
-      if (wealthy) {
+      // (only manual work: a well-off doctor still sees patients at their own practice)
+      if (wealthy && MANUAL.has(role)) {
         // the company hires for it; the owner looks in on the business now and then (no digging, no machines)
         if (checked || cooling(v, 'oversee:' + f.id)) continue;
         checked = true;
@@ -387,6 +393,94 @@ function groceryOptions(v: View): Option[] {
     }
   }
   return out;
+}
+
+// ------------------------------------------------------------------- health
+
+/**
+ * Ill or hurt: stay home in bed, see a doctor (when it's bad enough to be
+ * worth the price to them, or a check-up is due for a long-term condition),
+ * or go to hospital in an emergency (at any hour, money or not).
+ */
+function healthOptions(v: View): Option[] {
+  const { ctx, p } = v;
+  const ill = p.ill;
+  const out: Option[] = [];
+  if (!ill) return checkupOption(v);
+  if (ill.admitted !== undefined) return out;
+  const serious = ill.kind === 'serious';
+  const day = MINUTES_PER_DAY;
+  const due = serious || (ill.kind === 'chronic'
+    ? !(ill.seen !== undefined && ctx.s.tick - ill.seen < 25 * day)
+    : ill.sev >= 0.25 && !(ill.seen !== undefined && ctx.s.tick - ill.seen < 2 * day));
+  if (due && !cooling(v, 'doctor')) {
+    let known = knownOf(ctx, p, 'care').map((x) => x.b);
+    if (!known.length) {
+      // for a doctor people ask further afield (out in the villages, the nearest one may be in town)
+      const near = nearestCare(ctx, p);
+      if (near) learnPlace(ctx, p, near, 'care', 'asked');
+      known = knownOf(ctx, p, 'care').map((x) => x.b);
+    }
+    // the seriously ill go to a hospital; otherwise the nearest clinic or hospital that's seeing patients now
+    const open = (b: Building) => { const [h0, h1] = BUILDINGS[b.kind].hours; return v.hour >= h0 && v.hour < h1 - 1; };
+    const target = serious
+      ? known.find((b) => b.kind === 'hospital') ?? nearestHospital(ctx, p) ?? known.filter(open)[0]
+      : known.filter(open).sort((a, b) => bHours(p, a) - bHours(p, b))[0];
+    // badly ill or hurt with no hospital bed in reach: an ambulance to the regional hospital outside the city
+    if (!target?.kind.startsWith('hospital') && (serious ? ill.sev > 0.45 : ill.kind === 'injury' && ill.sev > 0.75) && !nearestHospital(ctx, p)) {
+      out.push({
+        label: 'Call an ambulance (regional hospital)',
+        score: 6.5 + 3 * ill.sev,
+        why: `${ILLNESS[ill.kind].label} (${Math.round(ill.sev * 100)}%) and no hospital bed in the city`,
+        steps: () => [{ k: 'idle', mins: 20, label: 'waiting for the ambulance', pose: 'sleep' }, { k: 'away' }],
+      });
+    }
+    if (target) {
+      const f = ctx.fById.get(target.firm);
+      const cost = visitCost(ctx, p, target);
+      if (f && (cashOf(ctx, p.id) >= cost || (serious && target.kind === 'hospital'))) {
+        // worth taking time off work for, unless it's just a cold
+        // (a check-up put off for long becomes worth a morning off work)
+        const overdue = ill.kind === 'chronic' ? (ctx.s.tick - (ill.seen ?? ill.since)) / day - 25 : 0;
+        const worry = serious ? 6 + 3 * ill.sev : ill.kind === 'chronic' ? Math.min(7, 2.2 + Math.max(0, overdue) / 6) : ill.kind === 'cold' ? 1 + 2 * ill.sev : 2.8 + 3.5 * ill.sev;
+        out.push({
+          label: serious ? `Go to the hospital (${f.name})` : `See a doctor at ${f.name}`,
+          score: serious ? worry : cap(worry - v.mv * cost / 4 - bHours(p, target)),
+          why: `${ILLNESS[ill.kind].label} (${Math.round(ill.sev * 100)}%)${ill.kind === 'chronic' ? ', due for a check-up' : ''}; costs them ${cost.toFixed(1)}`,
+          steps: () => [rideOrGo(v, target), { k: 'clinic', bid: target.id }],
+        });
+      }
+    }
+  }
+  if (tooSickToWork(p) && v.home?.built) {
+    // a doctor first (if they mean to see one), then bed
+    const doctorFirst = out.some((o) => o.label.startsWith('See a doctor') && o.score > 1.5);
+    out.push({
+      label: 'Stay home sick',
+      score: 2.2 + 3 * ill.sev - (doctorFirst ? 1.2 : 0),
+      why: `${ILLNESS[ill.kind].label}: in no state to work`,
+      steps: () => [go(v.home!), { k: 'idle', mins: 180, label: `home sick (${ILLNESS[ill.kind].label})`, pose: 'sleep' }],
+    });
+  }
+  return out;
+}
+
+/** A yearly check-up at a clinic they know (when it's open and the price doesn't put them off). */
+function checkupOption(v: View): Option[] {
+  const { ctx, p } = v;
+  const due = p.cooldown.checkup ??= ctx.s.tick + Math.floor(ctx.rng.next() * 365 * MINUTES_PER_DAY);
+  if (due > ctx.s.tick || cooling(v, 'doctor')) return [];
+  const clinic = knownOf(ctx, p, 'care').map((x) => x.b).find((b) => { const [h0, h1] = BUILDINGS[b.kind].hours; return v.hour >= h0 && v.hour < h1 - 1; });
+  const f = clinic ? ctx.fById.get(clinic.firm) : undefined;
+  if (!clinic || !f) return [];
+  const cost = visitCost(ctx, p, clinic);
+  if (cashOf(ctx, p.id) < cost * 3) return [];
+  return [{
+    label: `Go for a check-up at ${f.name}`,
+    score: cap(1.4 - v.mv * cost / 4 - bHours(p, clinic) + 0.3 * p.traits.patience),
+    why: `a yearly check-up; costs them ${cost.toFixed(1)}`,
+    steps: () => [rideOrGo(v, clinic), { k: 'clinic', bid: clinic.id }],
+  }];
 }
 
 /** Out of work, broke, and not online: apply for welfare in person at city hall. */
@@ -851,6 +945,11 @@ function businessOptions(v: View): Option[] {
       if (rivals * perStore > pop) continue;
       daily = Math.min(pop - rivals * perStore, perStore) * 0.6;
       why = `${pop} people and ${rivals} stores`;
+    } else if (def.service === 'health') {
+      // a doctors' practice: opened by a doctor, about one per 700 people
+      if (p.edu < 18 || rivals * 700 > pop) continue;
+      daily = Math.min(pop - rivals * 700, 700) * 0.06;
+      why = `${pop} people and ${rivals} clinics`;
     } else if (def.service === 'meal') {
       const perPlace = 80;
       if (rivals * perPlace > pop || ctx.s.contracts.length < 8) continue;
@@ -1259,6 +1358,7 @@ export function decide(ctx: Ctx, p: Person): void {
   opts.push(...groceryOptions(v));
   add(eatOutOption(v));
   add(deliveryOption(v));
+  opts.push(...healthOptions(v));
   add(soupKitchenOption(v));
   add(welfareOption(v));
   // where to live is weighed a couple of times a day (every time while they have nowhere decent)
@@ -1285,7 +1385,7 @@ export function decide(ctx: Ctx, p: Person): void {
   opts.push(...leisureOptions(v));
   opts.push(...politicsOptions(v));
   // late at night only home things make sense
-  if (v.night) for (const o of opts) if (!/sleep|home|eat|groceries|Shop for food|online|TV|phone|Order a meal|soup kitchen/i.test(o.label)) o.score -= 2;
+  if (v.night) for (const o of opts) if (!/sleep|home|eat|groceries|Shop for food|online|TV|phone|Order a meal|soup kitchen|hospital|sick|ambulance/i.test(o.label)) o.score -= 2;
   for (const o of opts) o.score += ctx.rng.range(-0.08, 0.08);
   // their own learned habits nudge the scores (survival needs stay in charge)
   const learned = brainBias(ctx, p);
@@ -1320,6 +1420,7 @@ export function decideCountry(ctx: Ctx, p: Person): void {
   opts.push(...groceryOptions(v));
   add(eatOutOption(v));
   add(soupKitchenOption(v));
+  opts.push(...healthOptions(v));
   if (p.job < 0 && !p.firms.length && (p.cooldown.jobcheck ?? 0) <= ctx.s.tick) {
     opts.push(...jobOptions(v, 0));
     p.cooldown.jobcheck = ctx.s.tick + 360;
@@ -1331,7 +1432,7 @@ export function decideCountry(ctx: Ctx, p: Person): void {
   }
   opts.push(...leisureOptions(v).filter((o) => !/Net at home|phone/.test(o.label)));
   opts.push(...politicsOptions(v).filter((o) => /^Go vote|^Go to /.test(o.label)));
-  if (v.night) for (const o of opts) if (!/sleep|home|eat|Shop for food|TV/i.test(o.label)) o.score -= 2;
+  if (v.night) for (const o of opts) if (!/sleep|home|eat|Shop for food|TV|hospital|sick|ambulance/i.test(o.label)) o.score -= 2;
   for (const o of opts) o.score += ctx.rng.range(-0.08, 0.08);
   opts.sort((a, b) => b.score - a.score);
   for (const o of opts) {
