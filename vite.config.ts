@@ -30,8 +30,10 @@ function servePlainIndex(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [servePlainIndex()],
   server: { port: 5173 },
+  // builds use relative paths, so the site works wherever it's hosted (e.g. https://<user>.github.io/econsim/)
+  base: command === 'build' ? './' : '/',
   build: { target: 'es2022', chunkSizeWarningLimit: 6000 },
-});
+}));

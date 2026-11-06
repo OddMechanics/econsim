@@ -327,3 +327,6 @@ as data, a territory claim, officials, a treasury, enforcers, and per-person rec
 - Countryside lot flicker (helper): render/settle.ts lays the lot ground of every built countryside building on the drawn
   ground (no flat slab), bends buildings, paths, cars and props to the slope at their base, and keeps yards inside the
   real lot (they used to spill over the road). Flicker test: slab-edge lines gone; what's left is shadow edges and thin rails.
+- GitHub Pages: vite builds with a relative base ('./'), so the site works under any sub-path;
+  .github/workflows/pages.yml builds and deploys on every push to main. Needs the repo public (or GitHub Pro) and
+  Settings → Pages → Source: GitHub Actions, once. Tested the build served under /econsim/: loads, no errors.
